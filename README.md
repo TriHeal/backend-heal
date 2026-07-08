@@ -57,6 +57,16 @@ Expected:
 { "ok": true, "service": "tri-heal-backend", "timestamp": "..." }
 ```
 
+## API docs (Swagger)
+
+Interactive docs, once the server is running:
+
+```text
+http://localhost:3333/docs
+```
+
+Raw OpenAPI JSON at `/docs-json`.
+
 ## Auth
 
 Custom ID+password login (not Firebase email/password): credentials live in a

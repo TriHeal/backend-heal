@@ -109,6 +109,16 @@ Pattern for new features: one module per resource
 via `@Inject(...)` from `firebase/firebase.constants.ts` — never call
 `admin.firestore()` etc. directly outside `firebase.module.ts`.
 
+## API docs
+
+`@nestjs/swagger` (pinned to v8.x — the current NestJS 10 major; v9+ of
+`@nestjs/swagger` requires NestJS 11) is wired in `main.ts` and serves
+interactive docs at `/docs` (raw spec at `/docs-json`) whenever the server
+is running. When adding a new endpoint, add `@ApiProperty()`/
+`@ApiPropertyOptional()` to its DTO fields and `@ApiTags()`/`@ApiOperation()`/
+`@ApiBearerAuth('firebase-id-token')` (if guarded) to the controller —
+follow `patients/` as the reference.
+
 ## Firebase project
 
 Project ID: `tri-heal-dev-d9484`. Firestore, Realtime Database, and Auth
