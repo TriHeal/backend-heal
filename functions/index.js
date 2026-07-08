@@ -1,32 +1,59 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
+const { onRequest } = require("firebase-functions/v2/https");
+const { setGlobalOptions } = require("firebase-functions/v2");
+const admin = require("firebase-admin");
+const { FieldValue } = require("firebase-admin/firestore");
 
-const {setGlobalOptions} = require("firebase-functions");
-const {onRequest} = require("firebase-functions/https");
-const logger = require("firebase-functions/logger");
+admin.initializeApp();
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
+const db = admin.firestore();
+
 setGlobalOptions({ maxInstances: 10 });
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
+exports.health = onRequest((req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: "tri-heal-backend",
+    timestamp: new Date().toISOString(),
+  });
+});
 
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+exports.createPatient = onRequest(async (req, res) => {
+  try {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    const { therapistId, displayName, age, avatarUrl } = req.body || {};
+
+    if (!therapistId || !displayName || !age) {
+      return res.status(400).json({
+        error: "Missing required fields: therapistId, displayName, age",
+      });
+    }
+
+    const now = FieldValue.serverTimestamp();
+
+    const patientRef = await db.collection("patients").add({
+      therapistId,
+      displayName,
+      age,
+      avatarUrl: avatarUrl || null,
+      status: "active",
+      enrolledAt: now,
+      createdAt: now,
+      updatedAt: now,
+      parents: [],
+    });
+
+    return res.status(201).json({
+      patientId: patientRef.id,
+      message: "Patient created successfully",
+    });
+  } catch (error) {
+    console.error("createPatient failed:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+});
