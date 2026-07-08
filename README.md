@@ -62,7 +62,7 @@ Expected:
 Interactive docs, once the server is running:
 
 ```text
-http://localhost:3333/docs
+http://localhost:3000/docs
 ```
 
 Raw OpenAPI JSON at `/docs-json`.
