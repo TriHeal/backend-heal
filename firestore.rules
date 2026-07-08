@@ -1,18 +1,50 @@
-rules_version='2'
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2026, 8, 7);
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function isTherapist() {
+      return isSignedIn() && role() == 'therapist';
+    }
+
+    function isParentOf(patientData) {
+      return isSignedIn() && request.auth.uid in patientData.parents;
+    }
+
+    function isChildOf(patientData) {
+      return isSignedIn() && patientData.childUid == request.auth.uid;
+    }
+
+    // Login credentials (id -> passwordHash/role/linkedUid) are only ever
+    // read/written by the NestJS server via the Admin SDK, never directly
+    // by clients.
+    match /credentials/{credentialId} {
+      allow read, write: if false;
+    }
+
+    match /patients/{patientId} {
+      allow create: if isTherapist()
+        && request.resource.data.therapistId == request.auth.uid;
+
+      allow read: if isTherapist() && resource.data.therapistId == request.auth.uid
+        || isParentOf(resource.data)
+        || isChildOf(resource.data);
+
+      // Therapist owns clinical fields; parents/child may only update the
+      // narrow fields relevant to their role (e.g. joint session state),
+      // never clinical content. Enforced by only allowing the therapist to
+      // write for now until parent/child write paths are defined.
+      allow update: if isTherapist() && resource.data.therapistId == request.auth.uid;
+
+      allow delete: if false;
     }
   }
 }

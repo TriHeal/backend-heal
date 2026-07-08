@@ -1,187 +1,105 @@
 # Tri-Heal Backend
 
-Firebase backend setup for the Tri-Heal MVP.
-
-## Current Scope
-
-This repository currently contains the initial Firebase backend infrastructure:
-
-- Firebase Functions
-- Firestore
-- Realtime Database
-- Firebase Authentication
-- Local Firebase Emulator Suite
-
-The first implemented backend endpoint is a simple example endpoint for creating a patient document in Firestore.
+Standalone NestJS server for the Tri-Heal MVP, backed by Firebase (Firestore,
+Realtime Database, Auth) via the Admin SDK.
 
 ## Prerequisites
 
-Before running the project locally, install:
+- Node.js 24 + npm
+- Firebase CLI: `npm install -g firebase-tools`
 
-- Node.js + npm
-- Firebase CLI
-- Java JDK 21 or above
+## Setup
 
-### 1. Install Node.js
+1. Install dependencies:
 
-On macOS with Homebrew:
+   ```bash
+   cd server
+   npm install
+   ```
 
-```bash
-brew install node
-```
+2. Log in and grant local access to the Firebase project:
 
-Verify:
+   ```bash
+   firebase login
+   gcloud auth application-default login
+   ```
 
-```bash
-node -v
-npm -v
-```
+3. Create `server/.env` from the example and fill it in:
 
-### 2. Install Firebase CLI
+   ```bash
+   cp .env.example .env
+   ```
 
-```bash
-npm install -g firebase-tools
-```
+   ```env
+   PORT=3333
+   FIREBASE_DATABASE_URL=https://tri-heal-dev-d9484-default-rtdb.europe-west1.firebasedatabase.app
+   ```
 
-Verify:
+Works the same on macOS, Linux, and Windows (PowerShell/cmd) — just use your
+shell's equivalent of `cp` (e.g. `copy .env.example .env` on Windows).
 
-```bash
-firebase --version
-```
-
-### 3. Login to Firebase
-
-```bash
-firebase login
-```
-
-### 4. Install Java JDK 21
-
-Firebase emulators require Java 21+.
+## Run
 
 ```bash
-brew install openjdk@21
+cd server
+npm run start:dev
 ```
 
-Link Java:
+## Check it's running
 
 ```bash
-sudo ln -sfn /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-21.jdk
+curl http://localhost:3333/health
 ```
 
-Add Java to PATH:
-
-```bash
-echo 'export PATH="/opt/homebrew/opt/openjdk@21/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-Verify:
-
-```bash
-java -version
-```
-
-Expected version should be `21` or above.
-
-### 5. Clone the repository
-
-```bash
-git clone <repo-url>
-cd backend-heal
-```
-
-### 6. Install project dependencies
-
-```bash
-cd functions
-npm install
-cd ..
-```
-## Firebase Project
-
-Development Firebase project:
-
-```text
-tri-heal-dev-d9484
-```
-
-## Running Locally
-
-Install dependencies:
-
-```bash
-cd functions
-npm install
-cd ..
-```
-
-Start Firebase emulators:
-
-```bash
-firebase emulators:start
-```
-
-Open Emulator UI:
-
-```text
-http://127.0.0.1:4000
-```
-
-## Available Local Endpoints
-
-### Health Check
-
-```text
-GET http://127.0.0.1:5001/tri-heal-dev-d9484/us-central1/health
-```
-
-Expected response:
+Expected:
 
 ```json
-{
-  "ok": true,
-  "service": "tri-heal-backend",
-  "timestamp": "..."
-}
+{ "ok": true, "service": "tri-heal-backend", "timestamp": "..." }
 ```
 
-### Create Patient
+## Auth
 
-```text
-POST http://127.0.0.1:5001/tri-heal-dev-d9484/us-central1/createPatient
-```
-
-Example request:
+Custom ID+password login (not Firebase email/password): credentials live in a
+Firestore `credentials` collection (bcrypt-hashed). Login returns a Firebase
+custom token; exchange it client-side for an ID token
+(`signInWithCustomToken`) and send that as `Authorization: Bearer <idToken>`
+on subsequent requests.
 
 ```bash
-curl -X POST http://127.0.0.1:5001/tri-heal-dev-d9484/us-central1/createPatient \
+# provision a login (therapist-only, needs an existing therapist token)
+curl -X POST http://localhost:3333/auth/credentials \
+  -H "Authorization: Bearer <therapist idToken>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "therapistId": "demo-therapist-1",
-    "displayName": "Daniel",
-    "age": 8
-  }'
+  -d '{"id":"demo-therapist-1","password":"a-strong-password","role":"therapist"}'
+
+# log in
+curl -X POST http://localhost:3333/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"id":"demo-therapist-1","password":"a-strong-password"}'
 ```
 
-Expected response:
+## Endpoints
 
-```json
-{
-  "patientId": "...",
-  "message": "Patient created successfully"
-}
-```
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/health` | none | liveness check |
+| POST | `/auth/login` | none | rate-limited, 5 failed attempts locks the account 15 min |
+| POST | `/auth/credentials` | therapist | provisions a login |
+| POST | `/patients` | therapist | `therapistId` is taken from the token, not the body |
 
-The created record can be viewed in:
+## Firebase project
 
-```text
-Emulator UI → Firestore → patients
-```
+Project: `tri-heal-dev-d9484`. Registered client apps (Unity + web use these
+to talk to Firebase Auth/Firestore/RTDB directly for realtime sync, separate
+from the REST API above):
 
-## Notes
+| Platform | App ID |
+|---|---|
+| Web | `1:935486565850:web:c255c143b23d26603164e3` |
+| Android | `1:935486565850:android:eb76337c902219b63164e3` |
+| iOS | `1:935486565850:ios:58726f356d1c0a993164e3` |
 
-- Local emulator data is not the real Firebase cloud data.
-- Emulator data may be deleted after restart unless export/import is configured.
-- This is an MVP starting point, not final production architecture.
-- Authentication and security rules still need to be completed.
+Fetch a config anytime: `firebase apps:sdkconfig <WEB|ANDROID|IOS> <app-id> --project tri-heal-dev-d9484`
+
+Security rules for that direct-client path live in `firestore.rules` and
+`database.rules.json`.
