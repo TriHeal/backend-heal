@@ -1,27 +1,23 @@
 import {
   CanActivate,
   ExecutionContext,
-  Inject,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Auth } from 'firebase-admin/auth';
-import { FIREBASE_AUTH } from '../firebase/firebase.constants';
+import { AuthService, AuthenticatedUser } from './auth.service';
 import { ROLES_KEY } from './roles.decorator';
 import { Role } from './role.enum';
 
 export interface AuthenticatedRequest extends Request {
-  user: {
-    uid: string;
-    role: Role;
-  };
+  user: AuthenticatedUser;
 }
 
 @Injectable()
 export class FirebaseAuthGuard implements CanActivate {
   constructor(
-    @Inject(FIREBASE_AUTH) private readonly firebaseAuth: Auth,
+    private readonly authService: AuthService,
     private readonly reflector: Reflector,
   ) {}
 
@@ -31,25 +27,15 @@ export class FirebaseAuthGuard implements CanActivate {
       .getRequest<AuthenticatedRequest & { headers: Record<string, string> }>();
 
     const authHeader = request.headers['authorization'];
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new UnauthorizedException('Missing bearer token');
     }
 
     const idToken = authHeader.slice('Bearer '.length).trim();
 
-    let decoded;
-    try {
-      decoded = await this.firebaseAuth.verifyIdToken(idToken);
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-
-    const role = decoded.role as Role | undefined;
-    if (!role) {
-      throw new UnauthorizedException('Token missing role claim');
-    }
-
-    request.user = { uid: decoded.uid, role };
+    const user = await this.authService.verifyTokenAndLoadUser(idToken);
+    request.user = user;
 
     const requiredRoles = this.reflector.getAllAndOverride<Role[] | undefined>(
       ROLES_KEY,
@@ -59,9 +45,9 @@ export class FirebaseAuthGuard implements CanActivate {
     if (
       requiredRoles &&
       requiredRoles.length > 0 &&
-      !requiredRoles.includes(role)
+      !requiredRoles.includes(user.role)
     ) {
-      throw new UnauthorizedException('Insufficient role');
+      throw new ForbiddenException('Insufficient role');
     }
 
     return true;
