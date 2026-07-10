@@ -30,6 +30,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // One-time device-connect codes (code -> patientId/expiresAt/used) are
+    // only ever read/written by the NestJS server via the Admin SDK, never
+    // directly by clients.
+    match /otpCodes/{code} {
+      allow read, write: if false;
+    }
+
     match /patients/{patientId} {
       allow create: if isTherapist()
         && request.resource.data.therapistId == request.auth.uid;
