@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { FirebaseModule } from './firebase/firebase.module';
 import { AuthModule } from './auth/auth.module';
+import { OtpModule } from './auth/otp/otp.module';
 import { PatientsModule } from './patients/patients.module';
 import { HealthController } from './health/health.controller';
 
@@ -13,6 +14,7 @@ import { HealthController } from './health/health.controller';
     }),
     FirebaseModule,
     AuthModule,
+    OtpModule,
     PatientsModule,
   ],
   controllers: [HealthController],
