@@ -1,112 +1,163 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
-import { FieldValue } from 'firebase-admin/firestore';
+import * as crypto from 'crypto';
 import { FIREBASE_AUTH, FIRESTORE } from '../firebase/firebase.constants';
-import { LoginDto } from './dto/login.dto';
-import { CreateCredentialDto } from './dto/create-credential.dto';
 import { Role } from './role.enum';
 
-const CREDENTIALS_COLLECTION = 'credentials';
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
-const BCRYPT_SALT_ROUNDS = 12;
-
-interface CredentialDoc {
-  passwordHash: string;
+export interface AuthenticatedUser {
+  uid: string;
   role: Role;
-  linkedUid: string;
-  createdAt: FirebaseFirestore.FieldValue | FirebaseFirestore.Timestamp;
-  failedAttempts: number;
-  lockedUntil: number | null;
 }
 
 @Injectable()
 export class AuthService {
   constructor(
-    @Inject(FIRESTORE) private readonly firestore: Firestore,
     @Inject(FIREBASE_AUTH) private readonly firebaseAuth: Auth,
+    @Inject(FIRESTORE) private readonly firestore: Firestore,
   ) {}
 
-  async login(dto: LoginDto): Promise<{ token: string; role: Role }> {
-    const docRef = this.firestore
-      .collection(CREDENTIALS_COLLECTION)
-      .doc(dto.id);
-    const snapshot = await docRef.get();
+  async loginWithIsraeliId(
+    israeliId: string,
+    password: string,
+  ): Promise<{ customToken: string }> {
+    const normalizedId = this.normalizeIsraeliId(israeliId);
+    const authEmail = this.buildInternalAuthEmail(normalizedId);
 
-    if (!snapshot.exists) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+    console.log('SECRET DEBUG', {
+      secret: process.env.AUTH_ID_HASH_SECRET,
+    });
 
-    const credential = snapshot.data() as CredentialDoc;
+    console.log('LOGIN DEBUG', {
+      normalizedId,
+      authEmail,
+      hasApiKey: !!process.env.FIREBASE_WEB_API_KEY,
+      projectId: process.env.FIREBASE_PROJECT_ID,
+    });
 
-    if (credential.lockedUntil && credential.lockedUntil > Date.now()) {
-      throw new UnauthorizedException(
-        'Account temporarily locked, try again later',
-      );
-    }
 
-    const passwordMatches = await bcrypt.compare(
-      dto.password,
-      credential.passwordHash,
+
+    const firebaseUser = await this.signInWithFirebasePassword(
+      authEmail,
+      password,
     );
 
-    if (!passwordMatches) {
-      const failedAttempts = (credential.failedAttempts ?? 0) + 1;
-      const lockedUntil =
-        failedAttempts >= MAX_FAILED_ATTEMPTS
-          ? Date.now() + LOCKOUT_DURATION_MS
-          : null;
+    const uid = firebaseUser.localId;
 
-      await docRef.update({ failedAttempts, lockedUntil });
+    var userSnapshot;
+    try {
+
+      userSnapshot = await Promise.race([
+        this.firestore.collection('users').doc(uid).get(),
+        new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore lookup timeout')), 5000),
+        ),
+      ]);
+
+    } catch (error) {
+      console.error('FIRESTORE LOOKUP FAILED', error);
+      throw error;
+    }
+
+    if (!userSnapshot.exists) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    await docRef.update({ failedAttempts: 0, lockedUntil: null });
+    const userData = userSnapshot.data();
 
-    const token = await this.firebaseAuth.createCustomToken(
-      credential.linkedUid,
+    if (!userData?.role) {
+      throw new UnauthorizedException('User role not configured');
+    }
+
+    const customToken = await this.firebaseAuth.createCustomToken(uid);
+
+    return { customToken };
+  }
+
+  async verifyTokenAndLoadUser(idToken: string): Promise<AuthenticatedUser> {
+    let decodedToken;
+
+    try {
+      decodedToken = await this.firebaseAuth.verifyIdToken(idToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const uid = decodedToken.uid;
+
+    const userSnapshot = await this.firestore.collection('users').doc(uid).get();
+
+    if (!userSnapshot.exists) {
+      throw new UnauthorizedException('User profile not found');
+    }
+
+    const userData = userSnapshot.data();
+
+    if (!userData?.role) {
+      throw new UnauthorizedException('User role not configured');
+    }
+
+    return {
+      uid,
+      role: userData.role as Role,
+    };
+  }
+
+  private buildInternalAuthEmail(israeliId: string): string {
+    const secret = process.env.AUTH_ID_HASH_SECRET;
+
+    if (!secret) {
+      throw new Error('AUTH_ID_HASH_SECRET is not configured');
+    }
+
+    const hash = crypto
+      .createHmac('sha256', secret)
+      .update(israeliId)
+      .digest('hex')
+      .slice(0, 32);
+
+    return `${hash}@auth.triheal.local`;
+  }
+
+  private normalizeIsraeliId(israeliId: string): string {
+    const digitsOnly = israeliId.replace(/\D/g, '');
+
+    if (digitsOnly.length < 5 || digitsOnly.length > 9) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    return digitsOnly.padStart(9, '0');
+  }
+
+  private async signInWithFirebasePassword(
+    email: string,
+    password: string,
+  ): Promise<{ localId: string }> {
+    const apiKey = process.env.FIREBASE_WEB_API_KEY;
+
+    if (!apiKey) {
+      throw new Error('FIREBASE_WEB_API_KEY is not configured');
+    }
+
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
       {
-        role: credential.role,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          returnSecureToken: true,
+        }),
       },
     );
 
-    return { token, role: credential.role };
-  }
-
-  async createCredential(
-    dto: CreateCredentialDto,
-  ): Promise<{ id: string; uid: string }> {
-    const docRef = this.firestore
-      .collection(CREDENTIALS_COLLECTION)
-      .doc(dto.id);
-    const existing = await docRef.get();
-
-    if (existing.exists) {
-      throw new BadRequestException(
-        `Credential with id "${dto.id}" already exists`,
-      );
+    if (!response.ok) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    const firebaseUser = await this.firebaseAuth.createUser({});
-
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
-
-    await docRef.set({
-      passwordHash,
-      role: dto.role,
-      linkedUid: firebaseUser.uid,
-      createdAt: FieldValue.serverTimestamp(),
-      failedAttempts: 0,
-      lockedUntil: null,
-    } satisfies CredentialDoc);
-
-    return { id: dto.id, uid: firebaseUser.uid };
+    return response.json();
   }
 }
