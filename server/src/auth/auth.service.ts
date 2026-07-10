@@ -24,19 +24,6 @@ export class AuthService {
     const normalizedId = this.normalizeIsraeliId(israeliId);
     const authEmail = this.buildInternalAuthEmail(normalizedId);
 
-    console.log('SECRET DEBUG', {
-      secret: process.env.AUTH_ID_HASH_SECRET,
-    });
-
-    console.log('LOGIN DEBUG', {
-      normalizedId,
-      authEmail,
-      hasApiKey: !!process.env.FIREBASE_WEB_API_KEY,
-      projectId: process.env.FIREBASE_PROJECT_ID,
-    });
-
-
-
     const firebaseUser = await this.signInWithFirebasePassword(
       authEmail,
       password,
