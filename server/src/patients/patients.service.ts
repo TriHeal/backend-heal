@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Firestore } from 'firebase-admin/firestore';
 import { FIRESTORE } from '../firebase/firebase.constants';
 import { CreatePatientDto } from './dto/create-patient.dto';
+import { Patient } from './entities/patient.entity';
 
 @Injectable()
 export class PatientsService {
@@ -10,7 +11,7 @@ export class PatientsService {
   async create(dto: CreatePatientDto, therapistId: string) {
     const patientRef = this.firestore.collection('patients').doc();
 
-    const patient = {
+    const patient: Patient= {
       id: patientRef.id,
       therapistId,
       displayName: dto.displayName,
@@ -27,23 +28,23 @@ export class PatientsService {
     return patient;
   }
 
-  async findAllByTherapist(therapistId: string) {
+  async findAllByTherapist(therapistId: string) : Promise<Patient[]> {
     const snapshot = await this.firestore
       .collection('patients')
       .where('therapistId', '==', therapistId)
       .get();
 
-    return snapshot.docs.map((doc) => doc.data());
+    return snapshot.docs.map((doc) => doc.data() as Patient);
   }
 
-  async findOne(patientId: string, therapistId: string) {
+  async findOne(patientId: string, therapistId: string) : Promise<Patient> {
     const doc = await this.firestore.collection('patients').doc(patientId).get();
 
     if (!doc.exists) {
       throw new NotFoundException('Patient not found');
     }
 
-    const patient = doc.data();
+    const patient = doc.data() as Patient;
 
     if (patient?.therapistId !== therapistId) {
       throw new NotFoundException('Patient not found');
