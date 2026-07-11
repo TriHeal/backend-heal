@@ -31,7 +31,7 @@ Realtime Database, Auth) via the Admin SDK.
    ```
 
    ```env
-   PORT=3000
+   PORT=3003
    FIREBASE_DATABASE_URL=https://tri-heal-dev-d9484-default-rtdb.europe-west1.firebasedatabase.app
    ```
 
@@ -48,7 +48,7 @@ npm run start:dev
 ## Check it's running
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:3003/health
 ```
 
 Expected:
@@ -62,7 +62,7 @@ Expected:
 Interactive docs, once the server is running:
 
 ```text
-http://localhost:3000/docs
+http://localhost:3003/docs
 ```
 
 Raw OpenAPI JSON at `/docs-json`.
@@ -77,13 +77,13 @@ on subsequent requests.
 
 ```bash
 # provision a login (therapist-only, needs an existing therapist token)
-curl -X POST http://localhost:3000/auth/credentials \
+curl -X POST http://localhost:3003/auth/credentials \
   -H "Authorization: Bearer <therapist idToken>" \
   -H "Content-Type: application/json" \
   -d '{"id":"demo-therapist-1","password":"a-strong-password","role":"therapist"}'
 
 # log in
-curl -X POST http://localhost:3000/auth/login \
+curl -X POST http://localhost:3003/auth/login \
   -H "Content-Type: application/json" \
   -d '{"id":"demo-therapist-1","password":"a-strong-password"}'
 ```
