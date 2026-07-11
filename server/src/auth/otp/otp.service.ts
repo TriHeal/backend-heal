@@ -2,6 +2,7 @@ import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
+import { randomInt } from 'crypto';
 import { FIREBASE_AUTH, FIRESTORE } from '../../firebase/firebase.constants';
 import { GenerateOtpDto } from './dto/generate-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -31,7 +32,9 @@ export class OtpService {
     @Inject(FIREBASE_AUTH) private readonly firebaseAuth: Auth,
   ) {}
 
-  async generate(dto: GenerateOtpDto): Promise<{ code: string; expiresAt: number }> {
+  async generate(
+    dto: GenerateOtpDto,
+  ): Promise<{ code: string; expiresAt: number }> {
     const collection = this.firestore.collection(OTP_CODES_COLLECTION);
     const expiresAt = Date.now() + OTP_EXPIRY_MS;
 
@@ -55,24 +58,30 @@ export class OtpService {
   }
 
   async verify(dto: VerifyOtpDto): Promise<{ token: string; role: Role }> {
-    const docRef = this.firestore.collection(OTP_CODES_COLLECTION).doc(dto.code);
-    const snapshot = await docRef.get();
+    const docRef = this.firestore
+      .collection(OTP_CODES_COLLECTION)
+      .doc(dto.code);
 
-    if (!snapshot.exists) {
-      throw new UnauthorizedException('Invalid code');
-    }
+    const otp = await this.firestore.runTransaction(async (tx) => {
+      const snapshot = await tx.get(docRef);
 
-    const otp = snapshot.data() as OtpCodeDoc;
+      if (!snapshot.exists) {
+        throw new UnauthorizedException('Invalid code');
+      }
 
-    if (otp.used) {
-      throw new UnauthorizedException('Code already used');
-    }
+      const data = snapshot.data() as OtpCodeDoc;
 
-    if (otp.expiresAt < Date.now()) {
-      throw new UnauthorizedException('Code expired');
-    }
+      if (data.used) {
+        throw new UnauthorizedException('Code already used');
+      }
 
-    await docRef.update({ used: true });
+      if (data.expiresAt < Date.now()) {
+        throw new UnauthorizedException('Code expired');
+      }
+
+      tx.update(docRef, { used: true });
+      return data;
+    });
 
     const patientRef = this.firestore
       .collection(PATIENTS_COLLECTION)
@@ -101,6 +110,6 @@ export class OtpService {
 
   private randomCode(): string {
     const max = 10 ** OTP_LENGTH;
-    return Math.floor(Math.random() * max).toString().padStart(OTP_LENGTH, '0');
+    return randomInt(0, max).toString().padStart(OTP_LENGTH, '0');
   }
 }
