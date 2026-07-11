@@ -10,6 +10,11 @@ export interface AuthenticatedUser {
   role: Role;
 }
 
+export interface LoginResponse {
+  customToken: string;
+  role: Role;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -20,22 +25,9 @@ export class AuthService {
   async loginWithIsraeliId(
     israeliId: string,
     password: string,
-  ): Promise<{ customToken: string }> {
+  ): Promise<LoginResponse> {
     const normalizedId = this.normalizeIsraeliId(israeliId);
     const authEmail = this.buildInternalAuthEmail(normalizedId);
-
-    console.log('SECRET DEBUG', {
-      secret: process.env.AUTH_ID_HASH_SECRET,
-    });
-
-    console.log('LOGIN DEBUG', {
-      normalizedId,
-      authEmail,
-      hasApiKey: !!process.env.FIREBASE_WEB_API_KEY,
-      projectId: process.env.FIREBASE_PROJECT_ID,
-    });
-
-
 
     const firebaseUser = await this.signInWithFirebasePassword(
       authEmail,
@@ -44,20 +36,7 @@ export class AuthService {
 
     const uid = firebaseUser.localId;
 
-    var userSnapshot;
-    try {
-
-      userSnapshot = await Promise.race([
-        this.firestore.collection('users').doc(uid).get(),
-        new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore lookup timeout')), 5000),
-        ),
-      ]);
-
-    } catch (error) {
-      console.error('FIRESTORE LOOKUP FAILED', error);
-      throw error;
-    }
+    const userSnapshot = await this.firestore.collection('users').doc(uid).get();
 
     if (!userSnapshot.exists) {
       throw new UnauthorizedException('Invalid credentials');
@@ -69,9 +48,13 @@ export class AuthService {
       throw new UnauthorizedException('User role not configured');
     }
 
-    const customToken = await this.firebaseAuth.createCustomToken(uid);
+    const role = userData.role as Role;
+    const customToken = await this.firebaseAuth.createCustomToken(uid, {
+      role,
+    });
 
-    return { customToken };
+
+    return { customToken, role};
   }
 
   async verifyTokenAndLoadUser(idToken: string): Promise<AuthenticatedUser> {

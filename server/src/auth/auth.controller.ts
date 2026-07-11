@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthService, AuthenticatedUser } from './auth.service';
+import { AuthService, AuthenticatedUser, LoginResponse } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { FirebaseAuthGuard } from './firebase-auth.guard';
 import { CurrentUser } from './current-user.decorator';
@@ -12,7 +12,7 @@ export class AuthController {
 
   @Post('login')
   @ApiOperation({ summary: 'Login with Israeli T.Z and Firebase password' })
-  login(@Body() dto: LoginDto): Promise<{ customToken: string }> {
+  login(@Body() dto: LoginDto): Promise<LoginResponse> {
     return this.authService.loginWithIsraeliId(dto.israeliId, dto.password);
   }
 
