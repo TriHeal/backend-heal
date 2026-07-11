@@ -6,7 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { OtpModule } from './auth/otp/otp.module';
 import { PatientsModule } from './patients/patients.module';
 import { HealthController } from './health/health.controller';
-import { SessionsModule } from './sessions/sessions.module';
+import { TherapySessionsModule } from './therapy-sessions/therapy-sessions.module';
 
 @Module({
   imports: [
@@ -17,7 +17,7 @@ import { SessionsModule } from './sessions/sessions.module';
     AuthModule,
     OtpModule,
     PatientsModule,
-    SessionsModule
+    TherapySessionsModule
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

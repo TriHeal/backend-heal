@@ -2,13 +2,13 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { Database } from 'firebase-admin/database';
 import { FIRESTORE, REALTIME_DB } from '../firebase/firebase.constants';
-import { CreateSessionDto } from './dto/create-session.dto';
+import { CreateTherapySessionDto } from './dto/create-therapy-session.dto';
 import { Patient } from 'src/patients/entities/patient.entity';
 import { TherapySession } from './entities/therapy-session.entity';
 
 
 @Injectable()
-export class SessionsService {
+export class TherapySessionsService {
   constructor(
     @Inject(FIRESTORE)
     private readonly firestore: Firestore,
@@ -18,7 +18,7 @@ export class SessionsService {
   ) {}
 
  async create(
-  dto: CreateSessionDto,
+  dto: CreateTherapySessionDto,
   therapistId: string,
 ): Promise<TherapySession> {
   const patientRef = this.firestore.collection('patients').doc(dto.patientId);
