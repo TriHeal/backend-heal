@@ -7,6 +7,7 @@ import { OtpModule } from './auth/otp/otp.module';
 import { PatientsModule } from './patients/patients.module';
 import { HealthController } from './health/health.controller';
 import { TherapySessionsModule } from './therapy-sessions/therapy-sessions.module';
+import { RocksBreakFlowModule } from './rocks-break-flow/rocks-break-flow.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { TherapySessionsModule } from './therapy-sessions/therapy-sessions.modul
     AuthModule,
     OtpModule,
     PatientsModule,
-    TherapySessionsModule
+    TherapySessionsModule,
+    RocksBreakFlowModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
