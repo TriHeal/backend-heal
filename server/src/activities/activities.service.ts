@@ -10,7 +10,7 @@ export type ActivityType =
 export interface ActivityCatalogItem {
   type: ActivityType;
   displayName: string;
-  enabled: boolean;
+  isAvailable: boolean;
 }
 
 @Injectable()
@@ -19,27 +19,27 @@ export class ActivitiesService {
     {
       type: 'breathing',
       displayName: 'Breathing Exercise',
-      enabled: true,
+      isAvailable: true,
     },
     {
       type: 'event_decomposition',
       displayName: 'Event Decomposition',
-      enabled: true,
+      isAvailable: true,
     },
     {
       type: 'memory_book',
       displayName: 'Memory Book',
-      enabled: true,
+      isAvailable: true,
     },
     {
       type: 'tree_forest',
       displayName: 'Tree Forest',
-      enabled: true,
+      isAvailable: true,
     },
     {
       type: 'leaf_on_water',
       displayName: 'Leaf on Water',
-      enabled: false,
+      isAvailable: false,
     },
   ];
 
