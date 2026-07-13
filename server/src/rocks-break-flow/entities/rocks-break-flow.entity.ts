@@ -1,8 +1,5 @@
-export interface RocksBreakFlow {
-  event_title: string;
-  think: string[];
-  actual: string[];
-  sessionId: string;
-  therapistId: string;
-  createdAt: string;
+export interface RocksBreakFlowDetails {
+  eventTitle: string;
+  thoughts: string[];
+  facts: string[];
 }

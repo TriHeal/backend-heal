@@ -20,8 +20,9 @@ export class RocksBreakFlowController {
   @ApiOperation({
     summary: 'Submit a rock-break event for a live session (therapist-only)',
     description:
-      'Validates the therapist owns the session, then writes the event to the ' +
-      'Realtime Database so the patient app can pick it up via a live listener.',
+      'Validates the therapist owns the session, then persists the activity to ' +
+      'Firestore (patients/{patientId}/activities/{activityId}) and mirrors it to ' +
+      'the Realtime Database so the patient app can pick it up via a live listener.',
   })
   create(
     @Param('id') sessionId: string,

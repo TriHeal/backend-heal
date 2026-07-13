@@ -3,8 +3,11 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type { Database } from 'firebase-admin/database';
 import { FIRESTORE, REALTIME_DB } from '../firebase/firebase.constants';
 import { CreateRocksBreakFlowDto } from './dto/create-rocks-break-flow.dto';
-import { RocksBreakFlow } from './entities/rocks-break-flow.entity';
+import { RocksBreakFlowDetails } from './entities/rocks-break-flow.entity';
+import { Activity } from '../activities/entities/activity.entity';
 import { TherapySession } from '../therapy-sessions/entities/therapy-session.entity';
+
+const ACTIVITY_TYPE = 'event_processing';
 
 @Injectable()
 export class RocksBreakFlowService {
@@ -20,7 +23,7 @@ export class RocksBreakFlowService {
     sessionId: string,
     dto: CreateRocksBreakFlowDto,
     therapistId: string,
-  ): Promise<RocksBreakFlow> {
+  ): Promise<Activity<RocksBreakFlowDetails>> {
     const sessionDoc = await this.firestore
       .collection('sessions')
       .doc(sessionId)
@@ -36,19 +39,34 @@ export class RocksBreakFlowService {
       throw new NotFoundException('Session not found');
     }
 
-    const event: RocksBreakFlow = {
-      event_title: dto.event_title,
-      think: dto.think,
-      actual: dto.actual,
+    const details: RocksBreakFlowDetails = {
+      eventTitle: dto.eventTitle,
+      thoughts: dto.thoughts,
+      facts: dto.facts,
+    };
+
+    const activityRef = this.firestore
+      .collection('patients')
+      .doc(session.patientId)
+      .collection('activities')
+      .doc();
+
+    const activity: Activity<RocksBreakFlowDetails> = {
+      id: activityRef.id,
+      activityType: ACTIVITY_TYPE,
       sessionId,
+      patientId: session.patientId,
       therapistId,
+      details,
       createdAt: new Date().toISOString(),
     };
 
+    await activityRef.set(activity);
+
     await this.realtimeDb
       .ref(`liveSessions/${sessionId}/currentActivity`)
-      .set(event);
+      .set(activity);
 
-    return event;
+    return activity;
   }
 }

@@ -8,7 +8,7 @@ export class CreateRocksBreakFlowDto {
   })
   @IsString()
   @IsNotEmpty()
-  event_title: string;
+  eventTitle: string;
 
   @ApiProperty({
     example: ['I always mess this up', 'No one believes in me'],
@@ -17,14 +17,14 @@ export class CreateRocksBreakFlowDto {
   })
   @IsString({ each: true })
   @ArrayNotEmpty()
-  think: string[];
+  thoughts: string[];
 
   @ApiProperty({
     example: ['I made a mistake, but I can fix it', 'My friends support me'],
-    description: 'The reframed, reality-based thoughts',
+    description: 'The reframed, reality-based facts',
     type: [String],
   })
   @IsString({ each: true })
   @ArrayNotEmpty()
-  actual: string[];
+  facts: string[];
 }
