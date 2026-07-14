@@ -11,7 +11,7 @@ export class PatientsService {
   async create(dto: CreatePatientDto, therapistId: string) {
     const patientRef = this.firestore.collection('patients').doc();
 
-    const patient: Patient= {
+    const patient: Patient = {
       id: patientRef.id,
       therapistId,
       displayName: dto.displayName,
@@ -19,6 +19,7 @@ export class PatientsService {
       avatarUrl: dto.avatarUrl ?? null,
       status: 'active',
       parentIds: [],
+      childUid: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
