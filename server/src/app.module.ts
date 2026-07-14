@@ -6,7 +6,8 @@ import { AuthModule } from './auth/auth.module';
 import { OtpModule } from './auth/otp/otp.module';
 import { PatientsModule } from './patients/patients.module';
 import { HealthController } from './health/health.controller';
-import { TherapySessionsModule} from './therapy-sessions/therapy-sessions.module';
+import { TherapySessionsModule } from './therapy-sessions/therapy-sessions.module';
+import { RocksBreakFlowModule } from './rocks-break-flow/rocks-break-flow.module';
 import { ActivitiesModule } from './activities/activities.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { ActivitiesModule } from './activities/activities.module';
     OtpModule,
     PatientsModule,
     TherapySessionsModule,
+    RocksBreakFlowModule,
     ActivitiesModule
   ],
   controllers: [HealthController],

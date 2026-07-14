@@ -6,6 +6,11 @@
         ".write": "auth != null && (data.child('participants').child(auth.uid).exists() || (!data.exists() && newData.child('participants').child(auth.uid).exists()))"
       }
     },
+    "liveSessions": {
+      "$sessionId": {
+        ".read": "auth != null && (data.child('therapistId').val() == auth.uid || data.child('patientId').val() == auth.uid)"
+      }
+    },
     ".read": false,
     ".write": false
   }
