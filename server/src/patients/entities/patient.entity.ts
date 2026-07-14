@@ -1,4 +1,4 @@
-export type PatientStatus = 'active' | 'inactive';
+export type PatientStatus = 'active' | 'paused' | 'completed';
 
 export interface Patient {
   id: string;
@@ -8,6 +8,7 @@ export interface Patient {
   avatarUrl: string | null;
   status: PatientStatus;
   parentIds: string[];
+  childUid: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

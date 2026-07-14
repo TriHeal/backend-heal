@@ -44,6 +44,13 @@ export class TherapySessionsService {
     status: 'active',
     createdAt: now,
     updatedAt: now,
+    activities: (dto.activities ?? [])
+      .sort((a, b) => a.order - b.order)
+      .map((activity) => ({
+        type: activity.type,
+        order: activity.order,
+        status: 'pending' as const,
+      })),
   };
 
   await sessionRef.set(session);
@@ -54,6 +61,7 @@ export class TherapySessionsService {
     patientId: dto.patientId,
     status: 'active',
     currentActivity: null,
+    activities: session.activities,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   });

@@ -1,15 +1,18 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { randomInt } from 'crypto';
-import { FIREBASE_AUTH, FIRESTORE } from '../../firebase/firebase.constants';
+import { FIREBASE_AUTH, FIRESTORE, REALTIME_DB } from '../../firebase/firebase.constants';
 import { GenerateOtpDto } from './dto/generate-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { Role } from '../role.enum';
+import { TherapySession } from 'src/therapy-sessions/entities/therapy-session.entity';
+import { Database } from 'node_modules/firebase-admin/lib/database/database';
 
 const OTP_CODES_COLLECTION = 'otpCodes';
 const PATIENTS_COLLECTION = 'patients';
+const SESSIONS_COLLECTION = 'sessions';
 const OTP_LENGTH = 6;
 const OTP_EXPIRY_MS = 15 * 60 * 1000;
 const MAX_GENERATE_ATTEMPTS = 5;
@@ -25,11 +28,22 @@ interface PatientDoc {
   childUid: string | null;
 }
 
+type VerifyOtpResponse = {
+  token: string;
+  role: Role;
+  patientId: string;
+  sessionId: string;
+  activities: TherapySession['activities'];
+  realtimePath: string;
+};
+
+
 @Injectable()
 export class OtpService {
   constructor(
     @Inject(FIRESTORE) private readonly firestore: Firestore,
     @Inject(FIREBASE_AUTH) private readonly firebaseAuth: Auth,
+    @Inject(REALTIME_DB) private readonly realtimeDb: Database,
   ) {}
 
   async generate(
@@ -57,7 +71,7 @@ export class OtpService {
     throw new Error('Failed to generate a unique OTP code, please retry');
   }
 
-  async verify(dto: VerifyOtpDto): Promise<{ token: string; role: Role }> {
+  async verify(dto: VerifyOtpDto): Promise<(VerifyOtpResponse)> {
     const docRef = this.firestore
       .collection(OTP_CODES_COLLECTION)
       .doc(dto.code);
@@ -101,11 +115,40 @@ export class OtpService {
       await patientRef.update({ childUid });
     }
 
+    const activeSessionSnapshot = await this.firestore
+      .collection(SESSIONS_COLLECTION)
+      .where('patientId', '==', otp.patientId)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+
+    if (activeSessionSnapshot.empty) {
+      throw new NotFoundException('No active session found for patient');
+    }
+
+    const activeSession = activeSessionSnapshot.docs[0].data() as TherapySession;
+    const realtimePath = `liveSessions/${activeSession.id}`;
+    const now = new Date().toISOString();
+
+    await this.realtimeDb.ref(`${realtimePath}/participants/child`).set({
+      uid: childUid,
+      patientId: otp.patientId,
+      role: Role.Child,
+      joinedAt: now,
+    });
+
     const token = await this.firebaseAuth.createCustomToken(childUid, {
       role: Role.Child,
     });
 
-    return { token, role: Role.Child };
+    return {
+      token,
+      role: Role.Child,
+      patientId: otp.patientId,
+      sessionId: activeSession.id,
+      activities: activeSession.activities ?? [],
+      realtimePath,
+    };
   }
 
   private randomCode(): string {

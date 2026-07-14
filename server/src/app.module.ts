@@ -8,6 +8,7 @@ import { PatientsModule } from './patients/patients.module';
 import { HealthController } from './health/health.controller';
 import { TherapySessionsModule } from './therapy-sessions/therapy-sessions.module';
 import { RocksBreakFlowModule } from './rocks-break-flow/rocks-break-flow.module';
+import { ActivitiesModule } from './activities/activities.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RocksBreakFlowModule } from './rocks-break-flow/rocks-break-flow.module
     PatientsModule,
     TherapySessionsModule,
     RocksBreakFlowModule,
+    ActivitiesModule
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
