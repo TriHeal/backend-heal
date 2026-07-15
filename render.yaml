@@ -8,8 +8,8 @@ services:
     healthCheckPath: /health
     envVars:
       - key: FIREBASE_DATABASE_URL
-        value: https://tri-heal-dev-d9484-default-rtdb.firebaseio.com
+        value: https://tri-heal-dev-d9484-default-rtdb.europe-west1.firebasedatabase.app
       - key: FRONTEND_ORIGIN
-        value: ""
+        value: https://therapist-dashboard-seven.vercel.app,https://backend-heal.onrender.com
       - key: FIREBASE_SERVICE_ACCOUNT
         sync: false
