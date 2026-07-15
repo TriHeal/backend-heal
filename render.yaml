@@ -3,7 +3,7 @@ services:
     name: tri-heal-backend
     runtime: docker
     dockerfilePath: ./server/Dockerfile
-    dockerContext: .
+    dockerContext: ./server
     plan: free
     healthCheckPath: /health
     envVars:
