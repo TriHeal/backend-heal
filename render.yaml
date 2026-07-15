@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: tri-heal-backend
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: FIREBASE_DATABASE_URL
+        value: https://tri-heal-dev-d9484-default-rtdb.firebaseio.com
+      - key: FRONTEND_ORIGIN
+        value: ""
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
