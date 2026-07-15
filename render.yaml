@@ -2,7 +2,7 @@ services:
   - type: web
     name: tri-heal-backend
     runtime: docker
-    dockerfilePath: ./server/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./server
     plan: free
     healthCheckPath: /health
