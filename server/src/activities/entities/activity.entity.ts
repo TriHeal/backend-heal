@@ -1,6 +1,12 @@
 import { ActivityType } from '../activity-type.enum';
 
-export type ActivityCategory = 'clinic' | 'practice' | 'distress';
+export enum ActivityCategory {
+  Clinic = 'clinic',
+  Practice = 'practice',
+  Distress = 'distress',
+}
+
+export type ActivityStatus = 'active' | 'completed';
 
 export interface ActivityPractice {
   assignedByTherapistId: string;
@@ -21,11 +27,12 @@ export interface Activity<TDetails = unknown> {
 
   activityCategory: ActivityCategory;
   activityType: ActivityType;
+  status: ActivityStatus;
 
   createdAt: string;
   startedAt: string;
   completedAt: string | null;
-  durationSeconds: number;
+  durationSeconds: number | null;
   interruptionCount: number;
 
   details: TDetails;
