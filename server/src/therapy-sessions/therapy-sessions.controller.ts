@@ -11,7 +11,9 @@ import { Role } from 'src/auth/role.enum';
 @ApiTags('therapy-sessions')
 @Controller('therapy-sessions')
 export class TherapySessionsController {
-  constructor(private readonly therapySessionsService: TherapySessionsService) {}
+  constructor(
+    private readonly therapySessionsService: TherapySessionsService,
+  ) {}
 
   @Post()
   @UseGuards(FirebaseAuthGuard)
@@ -28,9 +30,7 @@ export class TherapySessionsController {
   @UseGuards(FirebaseAuthGuard)
   @ApiBearerAuth('firebase-id-token')
   @ApiOperation({ summary: 'Get all sessions for theraphist' })
-  findAllForTherapist(
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  findAllForTherapist(@CurrentUser() user: AuthenticatedUser) {
     return this.therapySessionsService.findAllForTherapist(user.uid);
   }
 
@@ -38,11 +38,25 @@ export class TherapySessionsController {
   @UseGuards(FirebaseAuthGuard)
   @Roles(Role.Therapist)
   @ApiBearerAuth('firebase-id-token')
-  @ApiOperation({ summary: 'Get one session by ID for authenticated therapist' })
+  @ApiOperation({
+    summary: 'Get one session by ID for authenticated therapist',
+  })
   findOne(
     @Param('id') sessionId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.therapySessionsService.findOne(sessionId, user.uid);
+  }
+
+  @Post(':sessionId/end')
+  @UseGuards(FirebaseAuthGuard)
+  @Roles(Role.Therapist)
+  @ApiBearerAuth('firebase-id-token')
+  @ApiOperation({ summary: 'End an active therapy session' })
+  end(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.therapySessionsService.end(sessionId, user.uid);
   }
 }
