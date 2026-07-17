@@ -21,4 +21,5 @@ export interface TherapySession {
   activities: TherapySessionActivity[];
   createdAt: Date;
   updatedAt: Date;
+  endedAt: Date | null;
 }
