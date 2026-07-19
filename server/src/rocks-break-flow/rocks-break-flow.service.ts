@@ -4,11 +4,12 @@ import type { Database } from 'firebase-admin/database';
 import { FIRESTORE, REALTIME_DB } from '../firebase/firebase.constants';
 import { CreateRocksBreakFlowDto } from './dto/create-rocks-break-flow.dto';
 import { RocksBreakFlowDetails } from './entities/rocks-break-flow.entity';
-import { Activity } from '../activities/entities/activity.entity';
+import {
+  Activity,
+  ActivityCategory,
+} from '../activities/entities/activity.entity';
 import { ActivityType } from '../activities/activity-type.enum';
 import { TherapySession } from '../therapy-sessions/entities/therapy-session.entity';
-
-const ACTIVITY_TYPE = ActivityType.EventProcessing;
 
 @Injectable()
 export class RocksBreakFlowService {
@@ -58,15 +59,20 @@ export class RocksBreakFlowService {
       id: activityRef.id,
       patientId: session.patientId,
       therapistId,
-      activityCategory: 'practice',
-      activityType: ACTIVITY_TYPE,
       sessionId,
+
+      activityCategory: ActivityCategory.Practice,
+      activityType: ActivityType.EventProcessing,
+      status: 'active',
+
       createdAt: now,
       startedAt: now,
       completedAt: null,
-      durationSeconds: 0,
+      durationSeconds: null,
       interruptionCount: 0,
+
       details,
+
       practice: {
         assignedByTherapistId: therapistId,
         assignedInSessionId: sessionId,
