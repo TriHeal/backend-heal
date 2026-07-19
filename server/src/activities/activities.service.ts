@@ -128,6 +128,9 @@ export class ActivitiesService {
       completedAt: null,
       durationSeconds: null,
       interruptionCount: 0,
+      practice: null,
+      distress: null,
+      syncMetrics: null,
     };
 
     const updatedActivities = session.activities.map((item) =>
