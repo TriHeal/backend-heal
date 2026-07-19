@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, MinLength, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
+import type { PatientSex } from '../entities/patient.entity';
 
 export class CreatePatientDto {
   @ApiProperty({ example: 'Daniel' })
@@ -12,8 +21,23 @@ export class CreatePatientDto {
   @Min(0)
   age: number;
 
+  @ApiProperty({
+    enum: ['male', 'female', 'unspecified'],
+    example: 'male',
+  })
+  @IsIn(['male', 'female', 'unspecified'])
+  sex: PatientSex;
+
   @ApiPropertyOptional({ example: 'https://example.com/avatar.png' })
   @IsOptional()
   @IsString()
   avatarUrl?: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  parentSharingEnabled?: boolean;
 }

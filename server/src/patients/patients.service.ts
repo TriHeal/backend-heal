@@ -3,6 +3,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { FIRESTORE } from '../firebase/firebase.constants';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { Patient } from './entities/patient.entity';
+import { UpdatePatientDto } from './dto/update-patient.dto';
 
 @Injectable()
 export class PatientsService {
@@ -16,17 +17,40 @@ export class PatientsService {
       therapistId,
       displayName: dto.displayName,
       age: dto.age,
+      sex: dto.sex,
       avatarUrl: dto.avatarUrl ?? null,
       status: 'active',
       parentIds: [],
       childUid: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      parentSharingEnabled: dto.parentSharingEnabled ?? false
     };
 
     await patientRef.set(patient);
 
     return patient;
+  }
+
+  async update(
+    patientId: string,
+    dto: UpdatePatientDto,
+    therapistId: string,
+  ): Promise<Patient> {
+    const currentPatient = await this.findOne(patientId, therapistId);
+
+    const updatedPatient: Patient = {
+      ...currentPatient,
+      ...dto,
+      updatedAt: new Date(),
+    };
+
+    await this.firestore
+      .collection('patients')
+      .doc(patientId)
+      .set(updatedPatient);
+
+    return updatedPatient;
   }
 
   async findAllByTherapist(therapistId: string) : Promise<Patient[]> {
