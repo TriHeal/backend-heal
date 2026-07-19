@@ -5,9 +5,10 @@ import { FIRESTORE, REALTIME_DB } from '../firebase/firebase.constants';
 import { CreateRocksBreakFlowDto } from './dto/create-rocks-break-flow.dto';
 import { RocksBreakFlowDetails } from './entities/rocks-break-flow.entity';
 import { Activity } from '../activities/entities/activity.entity';
+import { ActivityType } from '../activities/activity-type.enum';
 import { TherapySession } from '../therapy-sessions/entities/therapy-session.entity';
 
-const ACTIVITY_TYPE = 'event_processing';
+const ACTIVITY_TYPE = ActivityType.EventProcessing;
 
 @Injectable()
 export class RocksBreakFlowService {
@@ -51,14 +52,33 @@ export class RocksBreakFlowService {
       .collection('activities')
       .doc();
 
+    const now = new Date().toISOString();
+
     const activity: Activity<RocksBreakFlowDetails> = {
       id: activityRef.id,
-      activityType: ACTIVITY_TYPE,
-      sessionId,
       patientId: session.patientId,
       therapistId,
+      activityCategory: 'practice',
+      activityType: ACTIVITY_TYPE,
+      sessionId,
+      createdAt: now,
+      startedAt: now,
+      completedAt: null,
+      durationSeconds: 0,
+      interruptionCount: 0,
       details,
-      createdAt: new Date().toISOString(),
+      practice: {
+        assignedByTherapistId: therapistId,
+        assignedInSessionId: sessionId,
+        performedInSessionId: sessionId,
+        assignedAt: now,
+        instructions: '',
+        targetCount: 1,
+        completedCount: 0,
+        isCompleted: false,
+      },
+      distress: null,
+      syncMetrics: null,
     };
 
     await activityRef.set(activity);
