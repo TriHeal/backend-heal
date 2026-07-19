@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayNotEmpty, IsNotEmpty, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateRocksBreakFlowDto {
   @ApiProperty({
@@ -15,8 +15,10 @@ export class CreateRocksBreakFlowDto {
     description: 'The automatic/negative thoughts the child had',
     type: [String],
   })
-  @IsString({ each: true })
+  @IsArray()
   @ArrayNotEmpty()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
   thoughts: string[];
 
   @ApiProperty({
@@ -24,7 +26,9 @@ export class CreateRocksBreakFlowDto {
     description: 'The reframed, reality-based facts',
     type: [String],
   })
-  @IsString({ each: true })
+  @IsArray()
   @ArrayNotEmpty()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
   facts: string[];
 }
