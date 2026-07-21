@@ -1,4 +1,13 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -12,6 +21,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { ParentAccountsService } from './parent-accounts.service';
 import { CreateParentAccountDto } from './dto/create-parent-account.dto';
 import { AuthenticatedUser } from '../auth/auth.service';
+import { UpdateParentAccountDto } from './dto/update-parent-account.dto';
 
 @ApiTags('parent-accounts')
 @ApiBearerAuth('firebase-id-token')
@@ -31,5 +41,28 @@ export class ParentAccountsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.parentAccountsService.create(dto, user.uid);
+  }
+
+  @Get()
+  @Roles(Role.Therapist)
+  @ApiOperation({ summary: 'List parent accounts linked to a patient' })
+  @ApiResponse({ status: 200, description: 'Parent accounts returned' })
+  findAllByPatient(
+    @Query('patientId') patientId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.parentAccountsService.findAllByPatient(patientId, user.uid);
+  }
+
+  @Patch(':id')
+  @Roles(Role.Therapist)
+  @ApiOperation({ summary: 'Update a parent account' })
+  @ApiResponse({ status: 200, description: 'Parent account updated' })
+  update(
+    @Param('id') parentId: string,
+    @Body() dto: UpdateParentAccountDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.parentAccountsService.update(parentId, dto, user.uid);
   }
 }

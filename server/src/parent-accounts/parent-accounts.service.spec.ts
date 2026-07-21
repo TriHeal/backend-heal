@@ -6,6 +6,7 @@ import { CreateParentAccountDto } from './dto/create-parent-account.dto';
 import { AcceptParentInvitationDto } from './dto/accept-parent-invitation.dto';
 import { FIRESTORE } from '../firebase/firebase.constants';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { UpdateParentAccountDto } from './dto/update-parent-account.dto';
 
 function createDoc(id: string) {
   return {
@@ -113,6 +114,107 @@ describe('ParentAccountsService', () => {
     );
   });
 
+  it('lists parent accounts linked to a patient', async () => {
+    const patientDoc = createDoc('patient-1');
+    patientDoc.get.mockResolvedValue(
+      createSnapshot({
+        id: 'patient-1',
+        therapistId: 'therapist-1',
+        parentIds: ['parent-1'],
+      }),
+    );
+
+    const parent = {
+      id: 'parent-1',
+      therapistId: 'therapist-1',
+      firebaseUid: null,
+      fullName: 'Linda Doe',
+      email: 'mom@example.com',
+      phone: null,
+      relationship: 'mother',
+      canAccessApp: false,
+      patientIds: ['patient-1'],
+      invitationStatus: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const parentQuery = {
+      get: jest.fn().mockResolvedValue({
+        docs: [{ data: () => parent }],
+      }),
+    };
+
+    const firstParentWhere = {
+      where: jest.fn().mockReturnValue(parentQuery),
+    };
+
+    firestoreMock.collection.mockImplementation((name: string) => {
+      if (name === 'patients') {
+        return { doc: jest.fn(() => patientDoc) };
+      }
+
+      if (name === 'parentAccounts') {
+        return {
+          where: jest.fn().mockReturnValue(firstParentWhere),
+        };
+      }
+
+      return { doc: jest.fn() };
+    });
+
+    const result = await service.findAllByPatient('patient-1', 'therapist-1');
+
+    expect(result).toEqual([parent]);
+  });
+
+  it('updates a parent account owned by the therapist', async () => {
+    const parentDoc = createDoc('parent-1');
+
+    const existingParent = {
+      id: 'parent-1',
+      therapistId: 'therapist-1',
+      firebaseUid: null,
+      fullName: 'Linda Doe',
+      email: 'mom@example.com',
+      phone: null,
+      relationship: 'mother',
+      canAccessApp: false,
+      patientIds: ['patient-1'],
+      invitationStatus: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    parentDoc.get.mockResolvedValue(createSnapshot(existingParent));
+
+    firestoreMock.collection.mockImplementation((name: string) => {
+      if (name === 'parentAccounts') {
+        return { doc: jest.fn(() => parentDoc) };
+      }
+
+      return { doc: jest.fn() };
+    });
+
+    const dto = new UpdateParentAccountDto();
+    dto.fullName = 'Linda Cohen';
+    dto.phone = '+972501111111';
+
+    const result = await service.update('parent-1', dto, 'therapist-1');
+
+    expect(parentDoc.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'parent-1',
+        fullName: 'Linda Cohen',
+        phone: '+972501111111',
+        email: 'mom@example.com',
+        canAccessApp: false,
+      }),
+    );
+
+    expect(result.fullName).toBe('Linda Cohen');
+    expect(result.phone).toBe('+972501111111');
+  });
   it('creates a parent account, links patient, and sends invitation email', async () => {
     const patientDoc = createDoc('patient-1');
     patientDoc.get.mockResolvedValue(
