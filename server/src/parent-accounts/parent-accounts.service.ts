@@ -22,6 +22,8 @@ export interface CreateParentAccountResult {
   invitationFailed: boolean;
 }
 
+import { UpdateParentAccountDto } from './dto/update-parent-account.dto';
+
 @Injectable()
 export class ParentAccountsService {
   private readonly logger = new Logger(ParentAccountsService.name);
@@ -165,6 +167,71 @@ export class ParentAccountsService {
         invitationFailed: true,
       };
     }
+  }
+
+  async findAllByPatient(
+    patientId: string,
+    therapistId: string,
+  ): Promise<ParentAccount[]> {
+    const patientSnapshot = await this.firestore
+      .collection('patients')
+      .doc(patientId)
+      .get();
+
+    if (!patientSnapshot.exists) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    const patient = patientSnapshot.data() as Patient;
+
+    if (patient.therapistId !== therapistId) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    const parentSnapshot = await this.firestore
+      .collection('parentAccounts')
+      .where('therapistId', '==', therapistId)
+      .where('patientIds', 'array-contains', patientId)
+      .get();
+
+    return parentSnapshot.docs.map(
+      (document) => document.data() as ParentAccount,
+    );
+  }
+
+  async update(
+    parentId: string,
+    dto: UpdateParentAccountDto,
+    therapistId: string,
+  ): Promise<ParentAccount> {
+    const parentRef = this.firestore.collection('parentAccounts').doc(parentId);
+
+    const parentSnapshot = await parentRef.get();
+
+    if (!parentSnapshot.exists) {
+      throw new NotFoundException('Parent not found');
+    }
+
+    const parent = parentSnapshot.data() as ParentAccount;
+
+    if (parent.therapistId !== therapistId) {
+      throw new NotFoundException('Parent not found');
+    }
+
+    const updatedParent: ParentAccount = {
+      ...parent,
+      ...(dto.fullName !== undefined && { fullName: dto.fullName }),
+      ...(dto.relationship !== undefined && {
+        relationship: dto.relationship,
+      }),
+      ...(dto.email !== undefined && { email: dto.email }),
+      ...(dto.phone !== undefined && { phone: dto.phone }),
+      updatedAt: new Date(),
+    };
+
+    await parentRef.set(updatedParent);
+
+    return updatedParent;
   }
 
   async acceptInvitation(
