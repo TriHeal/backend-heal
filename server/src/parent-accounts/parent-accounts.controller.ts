@@ -65,4 +65,15 @@ export class ParentAccountsController {
   ) {
     return this.parentAccountsService.update(parentId, dto, user.uid);
   }
+
+  @Post(':id/resend-invitation')
+  @Roles(Role.Therapist)
+  @ApiOperation({ summary: 'Resend a parent app invitation' })
+  @ApiResponse({ status: 200, description: 'Parent invitation resent' })
+  resendInvitation(
+    @Param('id') parentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.parentAccountsService.resendInvitation(parentId, user.uid);
+  }
 }

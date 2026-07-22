@@ -16,6 +16,12 @@ import { ParentAccount } from './entities/parent-account.entity';
 import { ParentInvitation } from './entities/parent-invitation.entity';
 import { Patient } from '../patients/entities/patient.entity';
 
+export interface AcceptParentInvitationResult {
+  parentId: string;
+  patientIds: string[];
+  patient: Pick<Patient, 'id' | 'displayName' | 'age' | 'avatarUrl'>;
+}
+
 export interface CreateParentAccountResult {
   parent: ParentAccount;
   emailSent: boolean;
@@ -152,13 +158,15 @@ export class ParentAccountsService {
       } catch (updateError) {
         this.logger.error(
           'Failed to mark parent account invitation as failed',
-          updateError?.message ?? updateError,
+          updateError instanceof Error
+            ? updateError.message
+            : String(updateError),
         );
       }
 
       this.logger.error(
         'Failed to send parent invitation email',
-        error?.message ?? error,
+        error instanceof Error ? error.message : String(error),
       );
 
       return {
@@ -234,9 +242,108 @@ export class ParentAccountsService {
     return updatedParent;
   }
 
+  async resendInvitation(
+  parentId: string,
+  therapistId: string,
+): Promise<{ emailSent: true }> {
+  const parentRef = this.firestore
+    .collection('parentAccounts')
+    .doc(parentId);
+
+  const parentSnapshot = await parentRef.get();
+
+  if (!parentSnapshot.exists) {
+    throw new NotFoundException('Parent not found');
+  }
+
+  const parent = parentSnapshot.data() as ParentAccount;
+
+  if (parent.therapistId !== therapistId) {
+    throw new NotFoundException('Parent not found');
+  }
+
+  if (!parent.email) {
+    throw new BadRequestException('Parent email is required');
+  }
+
+  if (parent.canAccessApp) {
+    throw new BadRequestException('Parent already has app access');
+  }
+
+  const patientId = parent.patientIds[0];
+
+  if (!patientId) {
+    throw new NotFoundException('Connected patient not found');
+  }
+
+  const invitationRef = this.firestore
+    .collection('parentInvitations')
+    .doc();
+
+  const rawToken = this.generateToken();
+  const now = new Date();
+
+  const invitation: ParentInvitation = {
+    id: invitationRef.id,
+    parentId: parent.id,
+    patientId,
+    therapistId,
+    tokenHash: this.hashToken(rawToken),
+    status: 'pending',
+    expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+    createdAt: now,
+    acceptedAt: null,
+  };
+
+    await invitationRef.set(invitation);
+
+    const baseUrl = process.env.PARENT_INVITE_BASE_URL;
+
+    if (!baseUrl) {
+      throw new HttpException(
+        'PARENT_INVITE_BASE_URL is not configured',
+        500,
+      );
+    }
+
+    const inviteUrl =
+      `${baseUrl}/parent/activate?token=${encodeURIComponent(rawToken)}`;
+
+    try {
+      await this.emailService.sendParentInvitationEmail({
+        to: parent.email,
+        parentFullName: parent.fullName,
+        patientName: await this.loadPatientDisplayName(patientId),
+        inviteUrl,
+      });
+
+      await parentRef.update({
+        invitationStatus: 'pending',
+        updatedAt: now,
+      });
+
+      return { emailSent: true };
+    } catch (error) {
+      await parentRef.update({
+        invitationStatus: 'failed',
+        updatedAt: new Date(),
+      });
+
+      this.logger.error(
+        'Failed to resend parent invitation email',
+        error instanceof Error ? error.message : String(error),
+      );
+
+      throw new HttpException(
+        'Parent invitation could not be sent',
+        500,
+      );
+    }
+  }
+
   async acceptInvitation(
     dto: AcceptParentInvitationDto,
-  ): Promise<{ parentId: string; patientIds: string[] }> {
+  ): Promise<AcceptParentInvitationResult> {
     const tokenHash = this.hashToken(dto.token);
 
     const invitationsQuery = await this.firestore
@@ -286,6 +393,21 @@ export class ParentAccountsService {
 
       const parent = parentSnapshot.data() as ParentAccount;
 
+      const patientId = parent.patientIds[0];
+
+      if (!patientId) {
+        throw new NotFoundException('Connected patient not found');
+      }
+
+      const patientRef = this.firestore.collection('patients').doc(patientId);
+      const patientSnapshot = await transaction.get(patientRef);
+
+      if (!patientSnapshot.exists) {
+        throw new NotFoundException('Connected patient not found');
+      }
+
+      const patient = patientSnapshot.data() as Patient;
+
       transaction.update(invitationRef, {
         status: 'accepted',
         acceptedAt: now,
@@ -300,6 +422,12 @@ export class ParentAccountsService {
       return {
         parentId: parent.id,
         patientIds: parent.patientIds,
+        patient: {
+          id: patient.id,
+          displayName: patient.displayName,
+          age: patient.age,
+          avatarUrl: patient.avatarUrl,
+        },
       };
     });
 
