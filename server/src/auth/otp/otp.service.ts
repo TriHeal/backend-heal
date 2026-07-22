@@ -1,9 +1,19 @@
-import { Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { randomInt } from 'crypto';
-import { FIREBASE_AUTH, FIRESTORE, REALTIME_DB } from '../../firebase/firebase.constants';
+import {
+  FIREBASE_AUTH,
+  FIRESTORE,
+  REALTIME_DB,
+} from '../../firebase/firebase.constants';
 import { GenerateOtpDto } from './dto/generate-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { Role } from '../role.enum';
@@ -26,6 +36,8 @@ interface OtpCodeDoc {
 
 interface PatientDoc {
   childUid: string | null;
+  therapistId?: string;
+  parentIds?: string[];
 }
 
 type VerifyOtpResponse = {
@@ -37,7 +49,6 @@ type VerifyOtpResponse = {
   realtimePath: string;
 };
 
-
 @Injectable()
 export class OtpService {
   constructor(
@@ -48,7 +59,46 @@ export class OtpService {
 
   async generate(
     dto: GenerateOtpDto,
+    authenticatedUserId: string,
+    authenticatedRole: Role,
   ): Promise<{ code: string; expiresAt: number }> {
+    const patientRef = this.firestore
+      .collection(PATIENTS_COLLECTION)
+      .doc(dto.patientId);
+    const patientSnapshot = await patientRef.get();
+
+    if (!patientSnapshot.exists) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    const patient = patientSnapshot.data() as PatientDoc;
+
+    if (authenticatedRole === Role.Therapist) {
+      if (patient.therapistId !== authenticatedUserId) {
+        throw new NotFoundException('Patient not found');
+      }
+    } else if (authenticatedRole === Role.Parent) {
+      if (
+        !Array.isArray(patient.parentIds) ||
+        !patient.parentIds.includes(authenticatedUserId)
+      ) {
+        throw new NotFoundException('Patient not found');
+      }
+    } else {
+      throw new NotFoundException('Patient not found');
+    }
+
+    const activeSessionSnapshot = await this.firestore
+      .collection(SESSIONS_COLLECTION)
+      .where('patientId', '==', dto.patientId)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+
+    if (activeSessionSnapshot.empty) {
+      throw new ConflictException('No active session found for patient');
+    }
+
     const collection = this.firestore.collection(OTP_CODES_COLLECTION);
     const expiresAt = Date.now() + OTP_EXPIRY_MS;
 
@@ -71,7 +121,7 @@ export class OtpService {
     throw new Error('Failed to generate a unique OTP code, please retry');
   }
 
-  async verify(dto: VerifyOtpDto): Promise<(VerifyOtpResponse)> {
+  async verify(dto: VerifyOtpDto): Promise<VerifyOtpResponse> {
     const docRef = this.firestore
       .collection(OTP_CODES_COLLECTION)
       .doc(dto.code);
@@ -126,7 +176,8 @@ export class OtpService {
       throw new NotFoundException('No active session found for patient');
     }
 
-    const activeSession = activeSessionSnapshot.docs[0].data() as TherapySession;
+    const activeSession =
+      activeSessionSnapshot.docs[0].data() as TherapySession;
     const realtimePath = `liveSessions/${activeSession.id}`;
     const now = new Date().toISOString();
 

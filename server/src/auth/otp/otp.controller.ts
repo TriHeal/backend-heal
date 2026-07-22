@@ -7,6 +7,8 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { FirebaseAuthGuard } from '../firebase-auth.guard';
 import { Roles } from '../roles.decorator';
 import { Role } from '../role.enum';
+import { CurrentUser } from '../current-user.decorator';
+import { AuthenticatedUser } from '../auth.service';
 
 @ApiTags('otp')
 @Controller('auth/otp')
@@ -22,8 +24,11 @@ export class OtpController {
     description:
       'Called when a parent (from their dashboard) or therapist connects a child device. Returns a 6-digit code to display, valid for 15 minutes and single-use.',
   })
-  generate(@Body() dto: GenerateOtpDto) {
-    return this.otpService.generate(dto);
+  generate(
+    @Body() dto: GenerateOtpDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.otpService.generate(dto, user.uid, user.role);
   }
 
   @Post('verify')
