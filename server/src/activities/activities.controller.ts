@@ -25,6 +25,16 @@ export class ActivitiesController {
     return this.activitiesService.findCatalog();
   }
 
+  @Get('sessions/:sessionId/runs')
+  @Roles(Role.Therapist)
+  @ApiOperation({ summary: 'Get all activity runs for a therapy session' })
+  findRuns(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.activitiesService.findRuns(sessionId, user.uid);
+  }
+
   @Post('sessions/:sessionId/start')
   @Roles(Role.Therapist)
   @ApiOperation({ summary: 'Start an activity in a live therapy session' })

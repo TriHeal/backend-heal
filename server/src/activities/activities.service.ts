@@ -61,6 +61,41 @@ export class ActivitiesService {
     return this.catalog;
   }
 
+  async findRuns(
+    sessionId: string,
+    therapistId: string,
+  ): Promise<Activity<Record<string, unknown>>[]> {
+    const sessionSnapshot = await this.firestore
+      .collection('sessions')
+      .doc(sessionId)
+      .get();
+
+    if (!sessionSnapshot.exists) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const session = sessionSnapshot.data() as TherapySession;
+
+    if (session.therapistId !== therapistId) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const activitiesSnapshot = await this.firestore
+      .collection('patients')
+      .doc(session.patientId)
+      .collection('activities')
+      .where('sessionId', '==', sessionId)
+      .get();
+
+    return activitiesSnapshot.docs
+      .map((doc) => doc.data() as Activity<Record<string, unknown>>)
+      .sort(
+        (first, second) =>
+          new Date(first.startedAt).getTime() -
+          new Date(second.startedAt).getTime(),
+      );
+  }
+
   async start(
     sessionId: string,
     dto: StartActivityDto,
@@ -91,8 +126,11 @@ export class ActivitiesService {
       throw new NotFoundException('Activity is not part of this session');
     }
 
-    if (selectedActivity.status !== 'pending') {
-      throw new ConflictException('Activity has already been started');
+    if (
+      selectedActivity.status !== 'pending' &&
+      selectedActivity.status !== 'completed'
+    ) {
+      throw new ConflictException('Activity is already active');
     }
 
     const currentActivitySnapshot = await this.realtimeDb
