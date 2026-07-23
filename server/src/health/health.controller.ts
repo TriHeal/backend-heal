@@ -34,6 +34,9 @@ export class HealthController {
         credentialMode: config.credentialMode,
         hasWebApiKey: config.hasWebApiKey,
         hasAuthIdHashSecret: config.hasAuthIdHashSecret,
+        // Length-only signals help detect env drift without exposing secrets.
+        webApiKeyLength: config.webApiKeyLength,
+        authIdHashSecretLength: config.authIdHashSecretLength,
         databaseURLConfigured: Boolean(config.databaseURL),
       },
     };
