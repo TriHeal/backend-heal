@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Logger, Module } from '@nestjs/common';
 import {
   App,
   applicationDefault,
@@ -9,9 +9,19 @@ import {
 import { getFirestore } from 'firebase-admin/firestore';
 import { getDatabase } from 'firebase-admin/database';
 import { getAuth } from 'firebase-admin/auth';
-import { FIRESTORE, REALTIME_DB, FIREBASE_AUTH } from './firebase.constants';
+import {
+  FIREBASE_APP,
+  FIRESTORE,
+  REALTIME_DB,
+  FIREBASE_AUTH,
+} from './firebase.constants';
+import {
+  assertFirebaseRuntimeConfig,
+  logFirebaseStartupDiagnostics,
+  resolveFirebaseRuntimeConfig,
+} from './firebase-config';
 
-const FIREBASE_APP = 'FIREBASE_APP';
+const logger = new Logger('FirebaseModule');
 
 function initializeFirebaseApp(): App {
   const existingApps = getApps();
@@ -19,23 +29,32 @@ function initializeFirebaseApp(): App {
     return existingApps[0];
   }
 
-  const databaseURL = process.env.FIREBASE_DATABASE_URL;
+  const config = resolveFirebaseRuntimeConfig();
+  assertFirebaseRuntimeConfig(config);
 
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (serviceAccountJson) {
-    return initializeApp({
-      credential: cert(JSON.parse(serviceAccountJson)),
-      databaseURL,
-    });
+  const app =
+    config.serviceAccount != null
+      ? initializeApp({
+          credential: cert(config.serviceAccount),
+          projectId: config.projectId,
+          databaseURL: config.databaseURL,
+        })
+      : initializeApp({
+          credential: applicationDefault(),
+          projectId: config.projectId,
+          databaseURL: config.databaseURL,
+        });
+
+  logFirebaseStartupDiagnostics(config);
+
+  const resolvedProjectId = app.options.projectId ?? config.projectId;
+  if (resolvedProjectId !== config.projectId) {
+    logger.warn(
+      `Firebase app projectId mismatch: config=${config.projectId}, app=${resolvedProjectId}`,
+    );
   }
 
-  // Falls back to GOOGLE_APPLICATION_CREDENTIALS / Application Default Credentials,
-  // which is also what lets the app run against the real Firebase project without
-  // requiring the local emulator suite.
-  return initializeApp({
-    credential: applicationDefault(),
-    databaseURL,
-  });
+  return app;
 }
 
 @Global()
@@ -58,6 +77,6 @@ function initializeFirebaseApp(): App {
       inject: [FIREBASE_APP],
     },
   ],
-  exports: [FIRESTORE, REALTIME_DB, FIREBASE_AUTH],
+  exports: [FIREBASE_APP, FIRESTORE, REALTIME_DB, FIREBASE_AUTH],
 })
 export class FirebaseModule {}

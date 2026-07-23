@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import * as crypto from 'crypto';
@@ -17,6 +22,8 @@ export interface LoginResponse {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(FIREBASE_AUTH) private readonly firebaseAuth: Auth,
     @Inject(FIRESTORE) private readonly firestore: Firestore,
@@ -36,9 +43,21 @@ export class AuthService {
 
     const uid = firebaseUser.localId;
 
-    const userSnapshot = await this.firestore.collection('users').doc(uid).get();
+    let userSnapshot;
+    try {
+      userSnapshot = await this.firestore.collection('users').doc(uid).get();
+    } catch (error) {
+      const err = error as { code?: string | number; message?: string };
+      this.logger.error(
+        `Firestore users lookup failed for uid=${uid} code=${err.code ?? 'unknown'} message=${err.message ?? 'unknown'}`,
+      );
+      throw error;
+    }
 
     if (!userSnapshot.exists) {
+      this.logger.warn(
+        `Login Auth succeeded but Firestore users/${uid} was not found`,
+      );
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -49,12 +68,18 @@ export class AuthService {
     }
 
     const role = userData.role as Role;
-    const customToken = await this.firebaseAuth.createCustomToken(uid, {
-      role,
-    });
-
-
-    return { customToken, role};
+    try {
+      const customToken = await this.firebaseAuth.createCustomToken(uid, {
+        role,
+      });
+      return { customToken, role };
+    } catch (error) {
+      const err = error as { code?: string | number; message?: string };
+      this.logger.error(
+        `createCustomToken failed for uid=${uid} code=${err.code ?? 'unknown'} message=${err.message ?? 'unknown'}`,
+      );
+      throw error;
+    }
   }
 
   async verifyTokenAndLoadUser(idToken: string): Promise<AuthenticatedUser> {
@@ -68,7 +93,10 @@ export class AuthService {
 
     const uid = decodedToken.uid;
 
-    const userSnapshot = await this.firestore.collection('users').doc(uid).get();
+    const userSnapshot = await this.firestore
+      .collection('users')
+      .doc(uid)
+      .get();
 
     if (!userSnapshot.exists) {
       throw new UnauthorizedException('User profile not found');
@@ -138,6 +166,9 @@ export class AuthService {
     );
 
     if (!response.ok) {
+      this.logger.warn(
+        `Firebase password sign-in failed (HTTP ${response.status}). Check AUTH_ID_HASH_SECRET and FIREBASE_WEB_API_KEY match the Firebase Auth project.`,
+      );
       throw new UnauthorizedException('Invalid credentials');
     }
 

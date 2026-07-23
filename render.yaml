@@ -7,9 +7,32 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: FIREBASE_DATABASE_URL
         value: https://tri-heal-dev-d9484-default-rtdb.europe-west1.firebasedatabase.app
+      - key: FIREBASE_PROJECT_ID
+        value: tri-heal-dev-d9484
+      - key: GOOGLE_CLOUD_PROJECT
+        value: tri-heal-dev-d9484
+      - key: GCLOUD_PROJECT
+        value: tri-heal-dev-d9484
       - key: FRONTEND_ORIGIN
         value: https://therapist-dashboard-seven.vercel.app,https://backend-heal.onrender.com
+      # Required secrets — set in the Render dashboard (not committed):
       - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      - key: AUTH_ID_HASH_SECRET
+        sync: false
+      # Optional: enable GET /health/firebase with header x-diagnostics-token
+      - key: DIAGNOSTICS_TOKEN
+        sync: false
+      # Optional parent-invite email settings
+      - key: RESEND_API_KEY
+        sync: false
+      - key: PARENT_INVITE_FROM_EMAIL
+        sync: false
+      - key: PARENT_INVITE_BASE_URL
         sync: false
