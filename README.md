@@ -96,6 +96,48 @@ curl -X POST http://localhost:3003/auth/login \
 | POST | `/auth/login` | none | rate-limited, 5 failed attempts locks the account 15 min |
 | POST | `/auth/credentials` | therapist | provisions a login |
 | POST | `/patients` | therapist | `therapistId` is taken from the token, not the body |
+| POST | `/parent-invitations/accept` | none (token) | activates a parent and returns a Firebase **custom token** (see below) |
+| POST | `/parent/sessions/watch` | parent | binds the parent to a specific child's active session for live viewing |
+
+## Parent access to a child's live session
+
+A parent can watch their child's therapy session in real time. The flow:
+
+1. **Provision (once):** the parent accepts their invitation via
+   `POST /parent-invitations/accept` with `{ token }`. The server links a
+   Firebase Auth identity to the `parentAccounts` doc (`firebaseUid`), writes
+   `users/{uid}` with `role: parent`, and returns a **custom token**. The
+   client exchanges it for an ID token (`signInWithCustomToken`). The same
+   uid is reused across all of a parent's children (deduped by email), so one
+   login covers every child.
+2. **Watch (per child):** the authenticated parent calls
+   `POST /parent/sessions/watch` with `{ patientId }` (the specific child).
+   The server verifies the parent owns that child, resolves the child's
+   **active** therapy session, registers the parent under
+   `liveSessions/{sessionId}/participants/parents/{uid}`, and returns
+   `{ patientId, sessionId, activities, realtimePath }`.
+3. **Live view:** the parent's client subscribes directly to `realtimePath`
+   (RTDB `liveSessions/{sessionId}`). Read access is granted by the rule in
+   `database.rules.json`, which allows a uid present under
+   `participants/parents`.
+
+```bash
+# activate (returns { token, role, parentId, patientIds, patient })
+curl -X POST http://localhost:3003/parent-invitations/accept \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<invite token>"}'
+
+# watch a specific child's active session
+curl -X POST http://localhost:3003/parent/sessions/watch \
+  -H "Authorization: Bearer <parent idToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"patientId":"<child patientId>"}'
+```
+
+An end-to-end smoke script that walks this whole flow (therapist login → patient
+→ invite → accept → session → parent watch) lives at
+[`scripts/smoke-parent-watch.sh`](scripts/smoke-parent-watch.sh) — see its header
+comment for the two-stage usage (the invite token comes from the email).
 
 ## Firebase project
 

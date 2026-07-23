@@ -8,7 +8,7 @@
     },
     "liveSessions": {
       "$sessionId": {
-        ".read": "auth != null && (data.child('therapistId').val() == auth.uid || data.child('patientId').val() == auth.uid)"
+        ".read": "auth != null && (data.child('therapistId').val() === auth.uid || data.child('participants').child('parents').child(auth.uid).exists() || data.child('participants').child('child').child('uid').val() === auth.uid)"
       }
     },
     ".read": false,

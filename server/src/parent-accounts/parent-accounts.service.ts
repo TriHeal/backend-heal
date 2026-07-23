@@ -6,9 +6,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import * as crypto from 'crypto';
-import { FIRESTORE } from '../firebase/firebase.constants';
+import { FIREBASE_AUTH, FIRESTORE } from '../firebase/firebase.constants';
+import { Role } from '../auth/role.enum';
 import { CreateParentAccountDto } from './dto/create-parent-account.dto';
 import { AcceptParentInvitationDto } from './dto/accept-parent-invitation.dto';
 import { ParentEmailService } from './parent-email.service';
@@ -20,6 +23,8 @@ export interface AcceptParentInvitationResult {
   parentId: string;
   patientIds: string[];
   patient: Pick<Patient, 'id' | 'displayName' | 'age' | 'avatarUrl'>;
+  token: string;
+  role: Role;
 }
 
 export interface CreateParentAccountResult {
@@ -36,6 +41,7 @@ export class ParentAccountsService {
 
   constructor(
     @Inject(FIRESTORE) private readonly firestore: Firestore,
+    @Inject(FIREBASE_AUTH) private readonly firebaseAuth: Auth,
     private readonly emailService: ParentEmailService,
   ) {}
 
@@ -126,6 +132,8 @@ export class ParentAccountsService {
       const inviteUrl = `${baseUrl}/parent/activate?token=${encodeURIComponent(
         rawToken,
       )}`;
+
+      this.logDevInviteUrl(dto.email, inviteUrl);
 
       await this.emailService.sendParentInvitationEmail({
         to: dto.email as string,
@@ -243,71 +251,65 @@ export class ParentAccountsService {
   }
 
   async resendInvitation(
-  parentId: string,
-  therapistId: string,
-): Promise<{ emailSent: true }> {
-  const parentRef = this.firestore
-    .collection('parentAccounts')
-    .doc(parentId);
+    parentId: string,
+    therapistId: string,
+  ): Promise<{ emailSent: true }> {
+    const parentRef = this.firestore.collection('parentAccounts').doc(parentId);
 
-  const parentSnapshot = await parentRef.get();
+    const parentSnapshot = await parentRef.get();
 
-  if (!parentSnapshot.exists) {
-    throw new NotFoundException('Parent not found');
-  }
+    if (!parentSnapshot.exists) {
+      throw new NotFoundException('Parent not found');
+    }
 
-  const parent = parentSnapshot.data() as ParentAccount;
+    const parent = parentSnapshot.data() as ParentAccount;
 
-  if (parent.therapistId !== therapistId) {
-    throw new NotFoundException('Parent not found');
-  }
+    if (parent.therapistId !== therapistId) {
+      throw new NotFoundException('Parent not found');
+    }
 
-  if (!parent.email) {
-    throw new BadRequestException('Parent email is required');
-  }
+    if (!parent.email) {
+      throw new BadRequestException('Parent email is required');
+    }
 
-  if (parent.canAccessApp) {
-    throw new BadRequestException('Parent already has app access');
-  }
+    if (parent.canAccessApp) {
+      throw new BadRequestException('Parent already has app access');
+    }
 
-  const patientId = parent.patientIds[0];
+    const patientId = parent.patientIds[0];
 
-  if (!patientId) {
-    throw new NotFoundException('Connected patient not found');
-  }
+    if (!patientId) {
+      throw new NotFoundException('Connected patient not found');
+    }
 
-  const invitationRef = this.firestore
-    .collection('parentInvitations')
-    .doc();
+    const invitationRef = this.firestore.collection('parentInvitations').doc();
 
-  const rawToken = this.generateToken();
-  const now = new Date();
+    const rawToken = this.generateToken();
+    const now = new Date();
 
-  const invitation: ParentInvitation = {
-    id: invitationRef.id,
-    parentId: parent.id,
-    patientId,
-    therapistId,
-    tokenHash: this.hashToken(rawToken),
-    status: 'pending',
-    expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-    createdAt: now,
-    acceptedAt: null,
-  };
+    const invitation: ParentInvitation = {
+      id: invitationRef.id,
+      parentId: parent.id,
+      patientId,
+      therapistId,
+      tokenHash: this.hashToken(rawToken),
+      status: 'pending',
+      expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      createdAt: now,
+      acceptedAt: null,
+    };
 
     await invitationRef.set(invitation);
 
     const baseUrl = process.env.PARENT_INVITE_BASE_URL;
 
     if (!baseUrl) {
-      throw new HttpException(
-        'PARENT_INVITE_BASE_URL is not configured',
-        500,
-      );
+      throw new HttpException('PARENT_INVITE_BASE_URL is not configured', 500);
     }
 
-    const inviteUrl =
-      `${baseUrl}/parent/activate?token=${encodeURIComponent(rawToken)}`;
+    const inviteUrl = `${baseUrl}/parent/activate?token=${encodeURIComponent(rawToken)}`;
+
+    this.logDevInviteUrl(parent.email, inviteUrl);
 
     try {
       await this.emailService.sendParentInvitationEmail({
@@ -334,10 +336,7 @@ export class ParentAccountsService {
         error instanceof Error ? error.message : String(error),
       );
 
-      throw new HttpException(
-        'Parent invitation could not be sent',
-        500,
-      );
+      throw new HttpException('Parent invitation could not be sent', 500);
     }
   }
 
@@ -357,6 +356,51 @@ export class ParentAccountsService {
     }
 
     const invitationRef = invitationsQuery.docs[0].ref;
+    const invitation = invitationsQuery.docs[0].data() as ParentInvitation;
+
+    // Cheap pre-checks so we don't provision a Firebase identity for an
+    // obviously invalid token. The transaction below re-validates against races.
+    if (invitation.status !== 'pending') {
+      throw new BadRequestException('Invalid or expired token');
+    }
+
+    if (this.extractDate(invitation.expiresAt) <= new Date()) {
+      await invitationRef.update({ status: 'expired' });
+      throw new BadRequestException('Invalid or expired token');
+    }
+
+    const parentRef = this.firestore
+      .collection('parentAccounts')
+      .doc(invitation.parentId);
+    const parentSnapshot = await parentRef.get();
+
+    if (!parentSnapshot.exists) {
+      throw new NotFoundException('Parent not found');
+    }
+
+    // Firebase Auth calls cannot run inside a Firestore transaction, so resolve
+    // the parent's uid up front. It is reused across a parent's multiple
+    // children so they share a single Firebase identity.
+    const firebaseUid = await this.resolveParentFirebaseUid(
+      parentSnapshot.data() as ParentAccount,
+    );
+
+    // Provision the login BEFORE the invitation is consumed. Both steps are
+    // idempotent, so if either fails the invitation stays 'pending' and the
+    // client can safely retry — rather than bricking a half-provisioned parent
+    // (invitation consumed but no users/{uid} doc / no token ever issued).
+    await this.firestore.collection('users').doc(firebaseUid).set(
+      {
+        role: Role.Parent,
+        parentAccountId: invitation.parentId,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    const token = await this.firebaseAuth.createCustomToken(firebaseUid, {
+      role: Role.Parent,
+    });
 
     const result = await this.firestore.runTransaction(async (transaction) => {
       const invitationSnapshot = await transaction.get(invitationRef);
@@ -365,11 +409,11 @@ export class ParentAccountsService {
         throw new BadRequestException('Invalid or expired token');
       }
 
-      const invitation = invitationSnapshot.data() as ParentInvitation;
+      const currentInvitation = invitationSnapshot.data() as ParentInvitation;
       const now = new Date();
-      const expiresAt = this.extractDate(invitation.expiresAt);
+      const expiresAt = this.extractDate(currentInvitation.expiresAt);
 
-      if (invitation.status !== 'pending') {
+      if (currentInvitation.status !== 'pending') {
         throw new BadRequestException('Invalid or expired token');
       }
 
@@ -381,17 +425,13 @@ export class ParentAccountsService {
         return null;
       }
 
-      const parentRef = this.firestore
-        .collection('parentAccounts')
-        .doc(invitation.parentId);
+      const currentParentSnapshot = await transaction.get(parentRef);
 
-      const parentSnapshot = await transaction.get(parentRef);
-
-      if (!parentSnapshot.exists) {
+      if (!currentParentSnapshot.exists) {
         throw new NotFoundException('Parent not found');
       }
 
-      const parent = parentSnapshot.data() as ParentAccount;
+      const parent = currentParentSnapshot.data() as ParentAccount;
 
       const patientId = parent.patientIds[0];
 
@@ -414,6 +454,7 @@ export class ParentAccountsService {
       });
 
       transaction.update(parentRef, {
+        firebaseUid,
         canAccessApp: true,
         invitationStatus: 'accepted',
         updatedAt: now,
@@ -435,7 +476,108 @@ export class ParentAccountsService {
       throw new BadRequestException('Invalid or expired token');
     }
 
-    return result;
+    return {
+      ...result,
+      token,
+      role: Role.Parent,
+    };
+  }
+
+  /**
+   * Resolve (and if needed provision) the Firebase Auth uid for a parent.
+   * Deduped by email so one real parent shares a single uid across all their
+   * parentAccount docs — which is what lets uid -> patients resolution find
+   * every child.
+   */
+  private async resolveParentFirebaseUid(
+    parent: ParentAccount,
+  ): Promise<string> {
+    if (parent.firebaseUid) {
+      return parent.firebaseUid;
+    }
+
+    if (parent.email) {
+      try {
+        const existing = await this.firebaseAuth.getUserByEmail(parent.email);
+        return existing.uid;
+      } catch (error) {
+        if ((error as { code?: string }).code !== 'auth/user-not-found') {
+          throw error;
+        }
+      }
+
+      // No user yet — create one, but tolerate a concurrent acceptance that
+      // wins the race (e.g. two of this parent's children accepted at once):
+      // fall back to the now-existing user so both converge on one shared uid
+      // instead of surfacing an unhandled auth/email-already-exists (500).
+      try {
+        const created = await this.firebaseAuth.createUser({
+          email: parent.email,
+        });
+        return created.uid;
+      } catch (error) {
+        if ((error as { code?: string }).code === 'auth/email-already-exists') {
+          const existing = await this.firebaseAuth.getUserByEmail(parent.email);
+          return existing.uid;
+        }
+        throw error;
+      }
+    }
+
+    const created = await this.firebaseAuth.createUser({});
+    return created.uid;
+  }
+
+  /**
+   * All patient ids linked to a logged-in parent, resolved via
+   * parentAccounts.firebaseUid (a parent may have several parentAccount docs,
+   * one per child, all sharing the same uid).
+   */
+  async findPatientIdsForParentUid(parentUid: string): Promise<string[]> {
+    const snapshot = await this.firestore
+      .collection('parentAccounts')
+      .where('firebaseUid', '==', parentUid)
+      .get();
+
+    const patientIds = new Set<string>();
+    for (const doc of snapshot.docs) {
+      const parent = doc.data() as ParentAccount;
+      for (const patientId of parent.patientIds ?? []) {
+        patientIds.add(patientId);
+      }
+    }
+
+    return Array.from(patientIds);
+  }
+
+  /**
+   * Throw unless the logged-in parent owns the given patient. Returns
+   * NotFound (not Forbidden) to avoid leaking which patient ids exist,
+   * mirroring the therapist ownership checks elsewhere.
+   */
+  async assertParentOwnsPatient(
+    parentUid: string,
+    patientId: string,
+  ): Promise<void> {
+    const patientIds = await this.findPatientIdsForParentUid(parentUid);
+
+    if (!patientIds.includes(patientId)) {
+      throw new NotFoundException('Patient not found');
+    }
+  }
+
+  // Dev-only convenience: surface the raw invite link (which is otherwise only
+  // sent by email) in the server logs so the flow can be tested without Resend.
+  // Silent in production (Render sets NODE_ENV=production).
+  private logDevInviteUrl(
+    email: string | null | undefined,
+    inviteUrl: string,
+  ): void {
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(
+        `[dev] Parent invite link for ${email ?? 'parent'}: ${inviteUrl}`,
+      );
+    }
   }
 
   private hashToken(token: string) {

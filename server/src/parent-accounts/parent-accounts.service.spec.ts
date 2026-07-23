@@ -4,7 +4,7 @@ import { ParentAccountsService } from './parent-accounts.service';
 import { ParentEmailService } from './parent-email.service';
 import { CreateParentAccountDto } from './dto/create-parent-account.dto';
 import { AcceptParentInvitationDto } from './dto/accept-parent-invitation.dto';
-import { FIRESTORE } from '../firebase/firebase.constants';
+import { FIREBASE_AUTH, FIRESTORE } from '../firebase/firebase.constants';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { UpdateParentAccountDto } from './dto/update-parent-account.dto';
 
@@ -28,6 +28,7 @@ describe('ParentAccountsService', () => {
   let service: ParentAccountsService;
   let firestoreMock: any;
   let emailServiceMock: any;
+  let firebaseAuthMock: any;
   let transactionMock: any;
 
   beforeEach(async () => {
@@ -48,10 +49,17 @@ describe('ParentAccountsService', () => {
       sendParentInvitationEmail: jest.fn(),
     };
 
+    firebaseAuthMock = {
+      getUserByEmail: jest.fn(),
+      createUser: jest.fn(),
+      createCustomToken: jest.fn().mockResolvedValue('custom-token'),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ParentAccountsService,
         { provide: FIRESTORE, useValue: firestoreMock },
+        { provide: FIREBASE_AUTH, useValue: firebaseAuthMock },
         { provide: ParentEmailService, useValue: emailServiceMock },
       ],
     }).compile();
@@ -362,23 +370,6 @@ describe('ParentAccountsService', () => {
       exists: true,
     };
 
-    const parentRef = createDoc('parent-1');
-    const parentData = {
-      id: 'parent-1',
-      therapistId: 'therapist-1',
-      patientIds: ['patient-1'],
-      canAccessApp: false,
-      invitationStatus: 'pending',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      firebaseUid: null,
-      fullName: 'Linda Doe',
-      email: 'mom@example.com',
-      phone: null,
-      relationship: 'mother',
-    };
-
-    const parentAccountCollection = { doc: jest.fn(() => parentRef) };
     const parentInvitationsQuery = {
       empty: false,
       docs: [invitationSnapshot],
@@ -395,29 +386,23 @@ describe('ParentAccountsService', () => {
         };
       }
 
-      if (name === 'parentAccounts') {
-        return parentAccountCollection;
-      }
-
       return { doc: jest.fn() };
     });
-
-    transactionMock.get
-      .mockResolvedValueOnce(invitationSnapshot)
-      .mockResolvedValueOnce(createSnapshot(parentData));
 
     const dto = new AcceptParentInvitationDto();
     dto.token = 'raw-token';
 
+    // Expiry is caught by the pre-check (before any transaction or Firebase
+    // Auth provisioning), which marks the invitation on its own ref.
     await expect(service.acceptInvitation(dto)).rejects.toThrow(
       BadRequestException,
     );
-    expect(transactionMock.update).toHaveBeenCalledWith(invitationDoc, {
-      status: 'expired',
-    });
+    expect(invitationDoc.update).toHaveBeenCalledWith({ status: 'expired' });
+    expect(firebaseAuthMock.createUser).not.toHaveBeenCalled();
+    expect(firestoreMock.runTransaction).not.toHaveBeenCalled();
   });
 
-  it('accepts valid parent invitation tokens', async () => {
+  it('accepts valid parent invitation tokens and provisions a login', async () => {
     const futureDate = new Date(Date.now() + 1000 * 60 * 60);
     const invitationDoc = createDoc('invitation-1');
     const invitationData = {
@@ -453,6 +438,17 @@ describe('ParentAccountsService', () => {
       phone: null,
       relationship: 'mother',
     };
+    // Non-transactional pre-read used to resolve the parent's email/uid.
+    parentRef.get.mockResolvedValue(createSnapshot(parentData));
+
+    const patientData = {
+      id: 'patient-1',
+      displayName: 'Danny',
+      age: 7,
+      avatarUrl: null,
+    };
+    const patientRef = createDoc('patient-1');
+    const usersDoc = createDoc('firebase-parent-1');
 
     const parentAccountCollection = { doc: jest.fn(() => parentRef) };
     const parentInvitationsQuery = {
@@ -475,18 +471,35 @@ describe('ParentAccountsService', () => {
         return parentAccountCollection;
       }
 
+      if (name === 'patients') {
+        return { doc: jest.fn(() => patientRef) };
+      }
+
+      if (name === 'users') {
+        return { doc: jest.fn(() => usersDoc) };
+      }
+
       return { doc: jest.fn() };
+    });
+
+    // Existing Firebase user for this email -> reuse its uid.
+    firebaseAuthMock.getUserByEmail.mockResolvedValue({
+      uid: 'firebase-parent-1',
     });
 
     transactionMock.get
       .mockResolvedValueOnce(invitationSnapshot)
-      .mockResolvedValueOnce(createSnapshot(parentData));
+      .mockResolvedValueOnce(createSnapshot(parentData))
+      .mockResolvedValueOnce(createSnapshot(patientData));
 
     const dto = new AcceptParentInvitationDto();
     dto.token = 'raw-token';
 
     const result = await service.acceptInvitation(dto);
 
+    expect(firebaseAuthMock.getUserByEmail).toHaveBeenCalledWith(
+      'mom@example.com',
+    );
     expect(transactionMock.update).toHaveBeenCalledWith(invitationDoc, {
       status: 'accepted',
       acceptedAt: expect.any(Date),
@@ -494,10 +507,127 @@ describe('ParentAccountsService', () => {
     expect(transactionMock.update).toHaveBeenCalledWith(
       parentRef,
       expect.objectContaining({
+        firebaseUid: 'firebase-parent-1',
         canAccessApp: true,
         invitationStatus: 'accepted',
       }),
     );
-    expect(result).toEqual({ parentId: 'parent-1', patientIds: ['patient-1'] });
+    expect(usersDoc.set).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'parent', parentAccountId: 'parent-1' }),
+      { merge: true },
+    );
+    expect(firebaseAuthMock.createCustomToken).toHaveBeenCalledWith(
+      'firebase-parent-1',
+      { role: 'parent' },
+    );
+    expect(result).toEqual({
+      parentId: 'parent-1',
+      patientIds: ['patient-1'],
+      patient: {
+        id: 'patient-1',
+        displayName: 'Danny',
+        age: 7,
+        avatarUrl: null,
+      },
+      token: 'custom-token',
+      role: 'parent',
+    });
+  });
+
+  it('converges on the shared uid when a concurrent accept already created the auth user', async () => {
+    const futureDate = new Date(Date.now() + 1000 * 60 * 60);
+    const invitationDoc = createDoc('invitation-1');
+    const invitationData = {
+      id: 'invitation-1',
+      parentId: 'parent-1',
+      patientId: 'patient-1',
+      therapistId: 'therapist-1',
+      tokenHash: 'f0f0f0',
+      status: 'pending',
+      expiresAt: futureDate,
+      createdAt: new Date(),
+      acceptedAt: null,
+    };
+    const invitationSnapshot = {
+      data: () => invitationData,
+      ref: invitationDoc,
+      exists: true,
+    };
+
+    const parentRef = createDoc('parent-1');
+    const parentData = {
+      id: 'parent-1',
+      therapistId: 'therapist-1',
+      patientIds: ['patient-1'],
+      canAccessApp: false,
+      invitationStatus: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      firebaseUid: null,
+      fullName: 'Linda Doe',
+      email: 'mom@example.com',
+      phone: null,
+      relationship: 'mother',
+    };
+    parentRef.get.mockResolvedValue(createSnapshot(parentData));
+
+    const patientData = {
+      id: 'patient-1',
+      displayName: 'Danny',
+      age: 7,
+      avatarUrl: null,
+    };
+    const patientRef = createDoc('patient-1');
+    const usersDoc = createDoc('shared-uid');
+
+    firestoreMock.collection.mockImplementation((name: string) => {
+      if (name === 'parentInvitations') {
+        return {
+          where: jest.fn(() => ({
+            limit: jest.fn().mockReturnValue({
+              get: jest.fn().mockResolvedValue({
+                empty: false,
+                docs: [invitationSnapshot],
+              }),
+            }),
+          })),
+        };
+      }
+      if (name === 'parentAccounts') return { doc: jest.fn(() => parentRef) };
+      if (name === 'patients') return { doc: jest.fn(() => patientRef) };
+      if (name === 'users') return { doc: jest.fn(() => usersDoc) };
+      return { doc: jest.fn() };
+    });
+
+    // Race: no user on first lookup, createUser loses the race, second lookup
+    // finds the winner's user -> both converge on the same shared uid.
+    firebaseAuthMock.getUserByEmail
+      .mockRejectedValueOnce({ code: 'auth/user-not-found' })
+      .mockResolvedValueOnce({ uid: 'shared-uid' });
+    firebaseAuthMock.createUser.mockRejectedValue({
+      code: 'auth/email-already-exists',
+    });
+
+    transactionMock.get
+      .mockResolvedValueOnce(invitationSnapshot)
+      .mockResolvedValueOnce(createSnapshot(parentData))
+      .mockResolvedValueOnce(createSnapshot(patientData));
+
+    const dto = new AcceptParentInvitationDto();
+    dto.token = 'raw-token';
+
+    const result = await service.acceptInvitation(dto);
+
+    expect(firebaseAuthMock.createUser).toHaveBeenCalled();
+    expect(firebaseAuthMock.getUserByEmail).toHaveBeenCalledTimes(2);
+    expect(transactionMock.update).toHaveBeenCalledWith(
+      parentRef,
+      expect.objectContaining({ firebaseUid: 'shared-uid' }),
+    );
+    expect(firebaseAuthMock.createCustomToken).toHaveBeenCalledWith(
+      'shared-uid',
+      { role: 'parent' },
+    );
+    expect(result.token).toBe('custom-token');
   });
 });
