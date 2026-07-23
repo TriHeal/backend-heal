@@ -7,6 +7,7 @@ import {
 } from '../../firebase/firebase.constants';
 import { OtpService } from './otp.service';
 import { Role } from '../role.enum';
+import { ParentAccountsService } from '../../parent-accounts/parent-accounts.service';
 
 describe('OtpService', () => {
   let service: OtpService;
@@ -17,6 +18,7 @@ describe('OtpService', () => {
   let otpCollection: any;
   let patientsCollection: any;
   let sessionsCollection: any;
+  let parentAccountsServiceMock: { assertParentOwnsPatient: jest.Mock };
 
   beforeEach(async () => {
     otpDocRef = {
@@ -57,6 +59,10 @@ describe('OtpService', () => {
       }),
     };
 
+    parentAccountsServiceMock = {
+      assertParentOwnsPatient: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OtpService,
@@ -66,6 +72,10 @@ describe('OtpService', () => {
           useValue: { createUser: jest.fn(), createCustomToken: jest.fn() },
         },
         { provide: REALTIME_DB, useValue: { ref: jest.fn() } },
+        {
+          provide: ParentAccountsService,
+          useValue: parentAccountsServiceMock,
+        },
       ],
     }).compile();
 
@@ -102,8 +112,11 @@ describe('OtpService', () => {
   it('allows an authorized parent to generate a code', async () => {
     patientsDocRef.get.mockResolvedValue({
       exists: true,
-      data: () => ({ therapistId: 'therapist-1', parentIds: ['parent-1'] }),
+      data: () => ({ therapistId: 'therapist-1' }),
     });
+    parentAccountsServiceMock.assertParentOwnsPatient.mockResolvedValue(
+      undefined,
+    );
     sessionsQuery.get.mockResolvedValue({
       empty: false,
       docs: [{ data: () => ({ id: 'session-1', activities: [] }) }],
@@ -119,6 +132,9 @@ describe('OtpService', () => {
       }),
     );
 
+    expect(
+      parentAccountsServiceMock.assertParentOwnsPatient,
+    ).toHaveBeenCalledWith('parent-1', 'patient-1');
     expect(otpDocRef.set).toHaveBeenCalledTimes(1);
   });
 
@@ -142,8 +158,11 @@ describe('OtpService', () => {
   it('rejects an unrelated parent', async () => {
     patientsDocRef.get.mockResolvedValue({
       exists: true,
-      data: () => ({ therapistId: 'therapist-1', parentIds: ['other-parent'] }),
+      data: () => ({ therapistId: 'therapist-1' }),
     });
+    parentAccountsServiceMock.assertParentOwnsPatient.mockRejectedValue(
+      new NotFoundException('Patient not found'),
+    );
 
     await expect(
       service.generate({ patientId: 'patient-1' }, 'parent-1', Role.Parent),

@@ -165,6 +165,26 @@ agent session.
   breathing/tap sync). Rules require the caller's uid to be present under
   `participants` to read/write.
 
+### Parent live-session access (uid ↔ child ↔ session)
+
+The link from a logged-in parent to their child's live session runs through
+`parentAccounts.firebaseUid`, **not** `patient.parentIds` (which holds
+parentAccount doc-ids, not uids):
+
+- `parentAccounts/{id}.firebaseUid` is populated at invitation acceptance
+  (`ParentAccountsService.acceptInvitation`). A Firebase Auth identity is
+  created/reused (deduped by email so one parent shares one uid across all
+  their children), `users/{uid}` is written with `role: parent` (this is what
+  `FirebaseAuthGuard` reads), and a custom token is returned.
+- Resolve a parent's children with `findPatientIdsForParentUid(uid)` /
+  `assertParentOwnsPatient(uid, patientId)` — query `parentAccounts` where
+  `firebaseUid == uid`, union `patientIds`. Reuse these helpers for any new
+  parent-scoped authorization (the OTP `generate` path already does).
+- `POST /parent/sessions/watch { patientId }` resolves the child's active
+  `sessions` doc and writes `liveSessions/{sessionId}/participants/parents/{uid}`.
+  `database.rules.json` grants that uid read on the session node. Parents never
+  get client write access to `liveSessions` (Admin-SDK only).
+
 ## Running locally
 
 ```bash

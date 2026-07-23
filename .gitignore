@@ -67,5 +67,8 @@ dist/
 # dotenv environment variables file
 .env
 
+# smoke-test transient state
+scripts/.smoke-parent-watch.state
+
 # dataconnect generated files
 .dataconnect

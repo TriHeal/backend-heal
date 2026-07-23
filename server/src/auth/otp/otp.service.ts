@@ -19,6 +19,7 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { Role } from '../role.enum';
 import { TherapySession } from 'src/therapy-sessions/entities/therapy-session.entity';
 import { Database } from 'node_modules/firebase-admin/lib/database/database';
+import { ParentAccountsService } from '../../parent-accounts/parent-accounts.service';
 
 const OTP_CODES_COLLECTION = 'otpCodes';
 const PATIENTS_COLLECTION = 'patients';
@@ -55,6 +56,7 @@ export class OtpService {
     @Inject(FIRESTORE) private readonly firestore: Firestore,
     @Inject(FIREBASE_AUTH) private readonly firebaseAuth: Auth,
     @Inject(REALTIME_DB) private readonly realtimeDb: Database,
+    private readonly parentAccountsService: ParentAccountsService,
   ) {}
 
   async generate(
@@ -78,12 +80,12 @@ export class OtpService {
         throw new NotFoundException('Patient not found');
       }
     } else if (authenticatedRole === Role.Parent) {
-      if (
-        !Array.isArray(patient.parentIds) ||
-        !patient.parentIds.includes(authenticatedUserId)
-      ) {
-        throw new NotFoundException('Patient not found');
-      }
+      // Parent ownership is resolved via parentAccounts.firebaseUid, not the
+      // patient doc (patient.parentIds holds parentAccount doc-ids, not uids).
+      await this.parentAccountsService.assertParentOwnsPatient(
+        authenticatedUserId,
+        dto.patientId,
+      );
     } else {
       throw new NotFoundException('Patient not found');
     }
